@@ -9,13 +9,13 @@ import zipfile
 from pathlib import Path
 from urllib import request
 
-#run with: python3 <(wget -qO- https://github.com/primetime00/memory_hack/raw/master/app/patches/install.py)
+#run with: python3 <(wget -qO- https://github.com/swe-agent/memory_hack/raw/master/app/patches/install.py)
 
 cwd = Path(os.getcwd())
 zip_dir_name = 'memory_hack-master'
 
 def download_source():
-    remote_url = 'https://github.com/primetime00/memory_hack/archive/refs/heads/master.zip'
+    remote_url = 'https://github.com/swe-agent/memory_hack/archive/refs/heads/master.zip'
     # Define the local filename to save data
     local_file = 'master.zip'
     # Download remote and save locally

@@ -11,7 +11,8 @@ class MemoryControl(controls.Group):
         self.start_address = 0
         self.memory_buffer: bytes = None
         self.max_rows = 12
-        self.max_cols = 10 #120 bytes?
+        self.max_cols = 16
+        self.column_headers = ["{:X}".format(i) for i in range(self.max_cols)]
         self.build_ui()
         self.on_copy = on_copy
         self.current_selected_address = -1
@@ -85,19 +86,36 @@ class MemoryControl(controls.Group):
 
     def generate(self):
         self.html_data = ''
+        if self.memory_buffer:
+            self.html_data += '<ons-row class="memory-header">\n'
+            for col_index, header in enumerate(self.column_headers):
+                style = self._column_style(col_index, header=True)
+                self.html_data += '<ons-col align="center" class="col ons-col-inner" style="{}">{}</ons-col>\n'.format(style, header)
+            self.html_data += '</ons-row>'
+
+        if not self.memory_buffer:
+            return self.html_data
+
         for row_index in range(0, self.max_rows):
             self.html_data += '<ons-row>\n'
             for col_index in range(0, self.max_cols):
                 index = self.max_cols*row_index+col_index
                 if index < len(self.memory_buffer):
-                    self.html_data += '<ons-col align="center" class="col ons-col-inner">'
-                    self.html_data += '<button id="{}_membutton-{:03}" class="memory_button" style="background:none; border:none;" data-mv_address="{}" onclick="script.script_interact_button(event)">{:02X}</button>'.format(self.script_ids[-1], index+self.start_address, self.start_address+(index), self.memory_buffer[index])
+                    style = self._column_style(col_index)
+                    self.html_data += '<ons-col align="center" class="col ons-col-inner" style="{}">'.format(style)
+                    self.html_data += '<button id="{}_membutton-{:03}" class="memory_button" style="background:transparent; border:none; width:100%;" data-mv_address="{}" onclick="script.script_interact_button(event)">{:02X}</button>'.format(self.script_ids[-1], index+self.start_address, self.start_address+(index), self.memory_buffer[index])
                     self.html_data += '</ons-col>\n'
             self.html_data += '</ons-row>'
         return self.html_data
 
+    def _column_style(self, col_index: int, header: bool = False) -> str:
+        background = '#ffffff' if ((col_index // 4) % 2) == 0 else '#f5f7fb'
+        font_weight = 'font-weight: 600;' if header else ''
+        padding = 'padding: 4px 0;' if header else ''
+        return 'background-color: {};{}{}'.format(background, font_weight, padding)
+
     def direction_pressed(self, name, _id, data):
-        self.on_direction(data['data']['direction'], (self.max_rows * (self.max_cols-1)))
+        self.on_direction(data['data']['direction'], self.max_rows * self.max_cols)
 
 
     def handle_interaction(self, _id: str, data):
@@ -109,25 +127,31 @@ class MemoryControl(controls.Group):
         cast(controls.advanced.CopyButton, self.get_element("COPY_BUTTON")).copy({'address': res})
 
 
-    def set_data(self, data:bytes, address: int = 0):
+    def set_data(self, data:bytes, address: int = 0, base_address: int | None = None):
         old_data = self.memory_buffer
         self.memory_buffer = data
         self.last_start_address = self.start_address
-        self.start_address = address
+        self.start_address = address if base_address is None else base_address
         if self.start_address != self.last_start_address:
             html = self.generate()
             self.get_element("MEMORY_ROW").inner(html)
 
-        if self.start_address <= self.current_selected_address < self.start_address+len(data):
-            self.js('if ($(".memory_button").css("border").indexOf("none") >= 0) {{ $("[data-mv_address=\'{}\']").css("border", "solid"); $("[data-mv_address=\'{}\']").css("border-width", "1px"); }}'.format(self.current_selected_address, self.current_selected_address))
+        if self.start_address <= self.current_selected_address < self.start_address + len(data):
+            self.js('if ($(".memory_button").css("border").indexOf("none") >= 0) { $("[data-mv_address=\'{}\']").css("border","solid"); $("[data-mv_address=\'{}\']").css("border-width", "1px"); }'.format(self.current_selected_address, self.current_selected_address))
             dl = self.check_for_diff(old_data, data)
             if self.current_selected_address in dl:
                 self.fill_data(self.current_selected_address - self.start_address)
         else:
-            self.js('$(".memory_button").css("border", "none"); $("[data-mv_address=\'{}\']").css("border", "solid"); $("[data-mv_address=\'{}\']").css("border-width", "1px");'.format(address, address))
-            cast(controls.Input, self.get_element("OUTPUT_ADDRESS_STRING")).set_text("{:X}".format(address))
-            self.fill_data(0)
-            self.current_selected_address = address
+            if self.start_address <= address < self.start_address + len(data):
+                self.js('$(".memory_button").css("border", "none"); $("[data-mv_address=\'{}\']").css("border", "solid"); $("[data-mv_address=\'{}\']").css("border-width", "1px");'.format(address, address))
+                cast(controls.Input, self.get_element("OUTPUT_ADDRESS_STRING")).set_text("{:X}".format(address))
+                self.fill_data(address - self.start_address)
+                self.current_selected_address = address
+            else:
+                self.js('$(".memory_button").css("border", "none")')
+                cast(controls.Input, self.get_element("OUTPUT_ADDRESS_STRING")).set_text("")
+                [cast(controls.Input, self.get_element(k)).set_text("") for k in self.ctrl_keys]
+                self.current_selected_address = -1
 
     def fill_data(self, location: int):
         l = location

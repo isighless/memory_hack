@@ -23,14 +23,14 @@ Memory Hack is a cross-platform memory editor with a web based front-end.
 
 |                                             Code List                                             |                                              Search                                              |
 |:-------------------------------------------------------------------------------------------------:|:------------------------------------------------------------------------------------------------:|
-| ![snap_codes](https://github.com/primetime00/memory_hack/raw/master/docs/images/snap_codes.png) | ![snap_codes](https://github.com/primetime00/memory_hack/raw/master/docs/images/snap_search.png) | 
+| ![snap_codes](https://github.com/swe-agent/memory_hack/raw/master/docs/images/snap_codes.png) | ![snap_codes](https://github.com/swe-agent/memory_hack/raw/master/docs/images/snap_search.png) |
 
 &NewLine;
 &NewLine;
 
 |                                                AOB                                                |                                              Scripts                                              |
 |:-------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------:|
-| ![snap_codes](https://github.com/primetime00/memory_hack/raw/master/docs/images/snap_aob.png) | ![snap_codes](https://github.com/primetime00/memory_hack/raw/master/docs/images/snap_scripts.png) | 
+| ![snap_codes](https://github.com/swe-agent/memory_hack/raw/master/docs/images/snap_aob.png) | ![snap_codes](https://github.com/swe-agent/memory_hack/raw/master/docs/images/snap_scripts.png) |
 
 Memory Hack uses a number of open source projects to work properly:
 
@@ -45,7 +45,7 @@ From Windows, a powershell command can be run to download the installer script. 
 1. Create a directory where Memory Hack should be installed.
 2. Run the powershell command to get the code.
 ```
-powershell -Command "(new-object System.Net.WebClient).DownloadFile('https://github.com/primetime00/memory_hack/raw/master/app/patches/win_install.py','install.py')"
+powershell -Command "(new-object System.Net.WebClient).DownloadFile('https://github.com/swe-agent/memory_hack/raw/master/app/patches/win_install.py','install.py')"
 ```
 3. Once the installation script is downloaded install the code:
 ```
@@ -71,7 +71,7 @@ Like Windows, Linux will download the installation script and install, optionall
 1. Create a directory where Memory Hack should be installed.
 2. Run the following command to download and install.
 ```
-python3 <(wget -qO- https://github.com/primetime00/memory_hack/raw/master/app/patches/install.py)
+python3 <(wget -qO- https://github.com/swe-agent/memory_hack/raw/master/app/patches/install.py)
 ```
 During installation, you will be asked if Memory Hack can be installed as a service.  If Memory Hack is run as a service, it will always be running.  Otherwise, Memory Hack must be manually started.
 3. Run Memory Hack if it was not installed as a service.
@@ -92,7 +92,7 @@ Steam Deck installation follows the Linux installation.  However, you must have 
 1. Create a directory where Memory Hack should be installed.
 2. Run the following command to download and install.
 ```
-python3 <(wget -qO- https://github.com/primetime00/memory_hack/raw/master/app/patches/install.py)
+python3 <(wget -qO- https://github.com/swe-agent/memory_hack/raw/master/app/patches/install.py)
 ```
 During installation, you will be asked if Memory Hack can be installed as a service.  If Memory Hack is run as a service, it will always be running.  Otherwise, Memory Hack must be manually started.
 3. Run Memory Hack if it was not installed as a service.
@@ -118,7 +118,7 @@ You would then see the UI for Memory Hack.
 Here are instructions for setting up a hostname in [Linux](https://www.tecmint.com/set-hostname-permanently-in-linux/) and [Windows](https://tecadmin.net/change-windows-hostname/) 
 
 ## Tutorial
-A basic tutorial on usage can be found [here.](https://github.com/primetime00/memory_hack/blob/master/docs/tutorial/TUTORIAL.md)
+A basic tutorial on usage can be found [here.](https://github.com/swe-agent/memory_hack/blob/master/docs/tutorial/TUTORIAL.md)
 
 ## License
 
