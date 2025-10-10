@@ -282,11 +282,13 @@ class SearcherMulti(Searcher):
     def search_memory_value(self, value: str):
         if self.results is None:
             raise SearchException('No results associated with the searcher')
+        sv = Value.create(value, self.search_size)
+        self._set_proximity_extra(sv.get_store_size())
+        self.total_size, self.mem_start, self.mem_end, self.mem_average = self.get_total_memory_size()
         if self.total_size <= 128000 or self.single_process:
-            super().search_memory_value(value)
+            super().search_memory_value(value, sv)
             return
         self.on_search_start(self.SEARCH_TYPE_VALUE)
-        sv = Value.create(value, self.search_size)
         self.signed = sv.is_signed() if isinstance(sv, IntValue) else False
 
         process_args = []
@@ -341,11 +343,13 @@ class SearcherMulti(Searcher):
     def search_memory_operation(self, operation, args=None):
         if self.results is None:
             raise SearchException('No results associated with the searcher')
+        sv = Value.create("0", self.search_size)
+        self._set_proximity_extra(sv.get_store_size())
+        self.total_size, self.mem_start, self.mem_end, self.mem_average = self.get_total_memory_size()
         if self.total_size <= 128000 or self.single_process:
-            super().search_memory_operation(operation, args)
+            super().search_memory_operation(operation, args, sv)
             return
         self.on_search_start(self.SEARCH_TYPE_OPERATION)
-        sv = Value.create("0", self.search_size)
         process_args = []
         mem_map = self._create_uniform_rounds(sv, max_size=self.mem_average)
 

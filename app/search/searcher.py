@@ -39,6 +39,7 @@ class Searcher:
         self.write_only = write_only
         self.include_paths = []
         self.proximity = {}
+        self.proximity_extra = 0
         self.aligned = True
         self.total_size, self.mem_start, self.mem_end, self.mem_average = self.get_total_memory_size()
         self.progress:Progress = progress
@@ -147,11 +148,18 @@ class Searcher:
             stop = base['stop']
         if start < base['start']:
             start = base['start']
-        self.proximity = {'start': start, 'stop': stop}
+        self.proximity = {
+            'start': start,
+            'stop': stop,
+            'base_start': base['start'],
+            'base_stop': base['stop']
+        }
+        self.proximity_extra = 0
         self.total_size, self.mem_start, self.mem_end, self.mem_average = self.get_total_memory_size()
 
     def clear_proximity(self):
         self.proximity = {}
+        self.proximity_extra = 0
         self.total_size, self.mem_start, self.mem_end, self.mem_average = self.get_total_memory_size()
 
     def set_aligned(self, aligned):
@@ -173,7 +181,8 @@ class Searcher:
 
     def get_regions(self):
         if self.proximity:
-            return [(self.proximity['start'], self.proximity['stop'])]
+            start, stop = self._get_effective_proximity_bounds()
+            return [(start, stop)]
         return self.memory.list_mapped_regions(writeable_only=self.write_only, include_paths=self.include_paths)
 
     def setup_by_value(self, sv: Value):
@@ -188,7 +197,9 @@ class Searcher:
     def get_total_memory_size(self):
         total = 0
         if self.proximity:
-            return self.proximity['stop'] - self.proximity['start'], self.proximity['start'], self.proximity['stop'],self.proximity['stop'] - self.proximity['start']
+            start, stop = self._get_effective_proximity_bounds()
+            total = max(0, stop - start)
+            return total, start, stop, total
         ls = list(self.get_regions())
         _start = ls[0][0]
         _end = ls[-1][1]
@@ -199,6 +210,22 @@ class Searcher:
 
     def prepare_memory_search(self):
         self.total_size, self.mem_start, self.mem_end, self.mem_average = self.get_total_memory_size()
+
+    def _get_effective_proximity_bounds(self):
+        start = self.proximity['start']
+        stop = self.proximity['stop'] + self.proximity_extra
+        base_stop = self.proximity.get('base_stop', stop)
+        if stop > base_stop:
+            stop = base_stop
+        if stop < start:
+            stop = start
+        return start, stop
+
+    def _set_proximity_extra(self, store_size: int):
+        if self.proximity:
+            self.proximity_extra = max(0, store_size - 1)
+        else:
+            self.proximity_extra = 0
 
     def clear_captures(self):
         if not self.mem_path.absolute().exists():
@@ -218,6 +245,7 @@ class Searcher:
         return len(self.capture_files) > 0
 
     def capture_memory(self):
+        self._set_proximity_extra(1)
         self.on_search_start(self.SEARCH_TYPE_CAPTURE)
         for start, stop in self.get_regions():
             size = stop-start
@@ -251,6 +279,7 @@ class Searcher:
     def capture_memory_range(self, _position, _range):
         if _position < self.mem_start:
             raise SearchException("Could not search around this position")
+        self._set_proximity_extra(1)
         self.on_search_start(self.SEARCH_TYPE_CAPTURE)
         #find out location
         loc_start = -1
@@ -279,11 +308,13 @@ class Searcher:
             raise
         self.on_search_end(self.SEARCH_TYPE_CAPTURE)
 
-    def search_memory_value(self, value: str):
+    def search_memory_value(self, value: str, sv: Value = None):
         if self.results is None:
             raise SearchException('No results associated with the searcher')
+        if sv is None:
+            sv = Value.create(value, self.search_size)
+        self._set_proximity_extra(sv.get_store_size())
         self.on_search_start(self.SEARCH_TYPE_VALUE)
-        sv = Value.create(value, self.search_size)
         self.signed = sv.is_signed() if isinstance(sv, IntValue) else False
         _batch_results = []
         with self.results.db() as conn:
@@ -315,11 +346,13 @@ class Searcher:
             self.results.create_address_index(conn)
             self.on_search_end(self.SEARCH_TYPE_VALUE)
 
-    def search_memory_operation(self, operation, args=None):
+    def search_memory_operation(self, operation, args=None, sv: Value = None):
         if self.results is None:
             raise SearchException('No results associated with the searcher')
+        if sv is None:
+            sv = Value.create("0", self.search_size)
+        self._set_proximity_extra(sv.get_store_size())
         self.on_search_start(self.SEARCH_TYPE_OPERATION)
-        sv = Value.create("0", self.search_size)
         _batch_results = []
         with self.results.db() as conn:
             def result_callback(results: list):
