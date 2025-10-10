@@ -2,7 +2,9 @@ import copy
 import ctypes
 import json
 import logging
+import math
 import traceback
+import uuid
 from queue import PriorityQueue
 from threading import Thread, Lock
 from typing import Union
@@ -10,9 +12,10 @@ from typing import Union
 from falcon import Request, Response
 from falcon.app_helpers import MEDIA_JSON
 
-from app.helpers import DynamicHTML, MemoryHandler, Progress
+from app.helpers import DataStore, DynamicHTML, MemoryHandler, Progress
 from app.helpers import memory_utils
-from app.helpers.exceptions import SearchException, BreakException
+from app.helpers.exceptions import SearchException, BreakException, CodelistException
+from app.helpers.search_results import SearchResults
 from app.search.operations import GreaterThan, LessThan, GreaterThanFloat, LessThanFloat, IncreaseOperation, \
     DecreaseOperation, \
     IncreaseOperationFloat, DecreaseOperationFloat, ChangedOperation, UnchangedOperation, ChangedOperationFloat, \
@@ -20,6 +23,9 @@ from app.search.operations import GreaterThan, LessThan, GreaterThanFloat, LessT
 from app.search.searcher import Searcher
 from app.search.searcher_multi import SearcherMulti
 from app.search.value import Value
+from app.helpers.directory_utils import memory_directory
+from app.helpers.process import BaseConvert, BaseConvertException
+from app.services.codes import CodeList
 
 ctypes_buffer_t = Union[ctypes._SimpleCData, ctypes.Array, ctypes.Structure, ctypes.Union]
 
@@ -39,7 +45,10 @@ class Search(MemoryHandler):
             "SEARCH_START": self.handle_search,
             "SEARCH_STATUS": self.handle_initialization,
             "SEARCH_WRITE": self.handle_write,
-            "SEARCH_FREEZE": self.handle_freeze
+            "SEARCH_FREEZE": self.handle_freeze,
+            "SEARCH_STRUCTURE_GROUPS": self.handle_structure_groups,
+            "SEARCH_STRUCTURE_RUN": self.handle_structure_run,
+            "SEARCH_STRUCTURE_APPLY": self.handle_structure_apply,
         }
         self.search_map = {
             'equal_to': self._equal_search,
@@ -440,6 +449,274 @@ class Search(MemoryHandler):
             self.update_thread.add_action('quit')
             self.update_thread.join()
         self.update_thread = None
+
+    def handle_structure_groups(self, req: Request, resp: Response):
+        file_name = (req.media.get('file') or "").strip()
+        if not file_name:
+            raise SearchException("Code list name is required")
+        groups = self._load_structure_groups(file_name)
+        resp.media['file'] = file_name
+        resp.media['groups'] = []
+        for entry in sorted(groups.values(), key=lambda grp: grp['name']):
+            resp.media['groups'].append({
+                'name': entry['name'],
+                'base_index': entry['base']['index'],
+                'base_address': '{:X}'.format(entry['base']['address']),
+                'items': [
+                    {
+                        'index': item['index'],
+                        'name': item['name'],
+                        'type': item['type'],
+                        'signed': item['signed'],
+                        'address': '{:X}'.format(item['address']),
+                        'offset': item['offset'],
+                    }
+                    for item in entry['items']
+                ]
+            })
+
+    def handle_structure_run(self, req: Request, resp: Response):
+        if not self.has_mem():
+            raise SearchException("Attach to a process before running a structure search")
+        file_name = (req.media.get('file') or "").strip()
+        group_name = (req.media.get('group') or "").strip()
+        if not file_name or not group_name:
+            raise SearchException("Both code list and group are required")
+        groups = self._load_structure_groups(file_name)
+        group_key = group_name.casefold()
+        if group_key not in groups:
+            raise SearchException("Selected rebase group was not found in the code list")
+        group_entry = groups[group_key]
+        base_item = group_entry['base']
+        try:
+            base_value = self._read_typed_value(base_item['address'], base_item['type'], base_item['signed'])
+        except OSError as exc:
+            raise SearchException("Could not read the base item's current value") from exc
+
+        raw_known = req.media.get('known_values', {})
+        if isinstance(raw_known, str):
+            raw_known = raw_known.strip()
+            if raw_known:
+                try:
+                    known_map = json.loads(raw_known)
+                except json.JSONDecodeError as exc:
+                    raise SearchException("Known value data could not be parsed") from exc
+            else:
+                known_map = {}
+        elif isinstance(raw_known, dict):
+            known_map = raw_known
+        else:
+            known_map = {}
+        parsed_known = self._parse_known_values(known_map, group_entry['items'])
+        if base_item['index'] in parsed_known:
+            if not self._value_matches(parsed_known[base_item['index']], base_value, base_item['type']):
+                raise SearchException("Known value for the base item does not match the current process value")
+
+        results_identifier = uuid.uuid4().hex
+        results_path = memory_directory.joinpath(f'structure_{results_identifier}.db')
+        results_store = SearchResults(name=f'structure_{results_identifier}', db_path=results_path)
+        searcher = SearcherMulti(self.mem(), progress=None, write_only=True, results=results_store)
+        searcher.set_search_size(base_item['type'])
+        searcher.set_signed(base_item['signed'])
+        searcher.set_write_only(False)
+
+        matches = []
+        try:
+            searcher.search_memory_value(str(base_value))
+            with results_store.db() as conn:
+                for address, _ in results_store.get_results(conn):
+                    candidate_base = int(address)
+                    if self._structure_candidate_matches(candidate_base, group_entry['items'], base_item, parsed_known):
+                        matches.append(candidate_base)
+        finally:
+            searcher.reset()
+            results_store.delete_database()
+
+        matches = sorted(set(matches))
+        resp.media['file'] = file_name
+        resp.media['group'] = group_entry['name']
+        resp.media['base_index'] = base_item['index']
+        resp.media['base_address'] = '{:X}'.format(base_item['address'])
+        resp.media['base_value'] = str(base_value)
+        resp.media['results'] = []
+        for candidate in matches:
+            resp.media['results'].append({
+                'base_address': '{:X}'.format(candidate),
+                'base_index': base_item['index'],
+                'items': [
+                    {
+                        'index': item['index'],
+                        'name': item['name'],
+                        'type': item['type'],
+                        'signed': item['signed'],
+                        'offset': item['offset'],
+                        'address': '{:X}'.format(candidate + item['offset'])
+                    }
+                    for item in group_entry['items']
+                ]
+            })
+
+    def handle_structure_apply(self, req: Request, resp: Response):
+        # Assumption: applying a structure search hit requires the CodeList service to have the target file loaded.
+        file_name = (req.media.get('file') or "").strip()
+        group_name = (req.media.get('group') or "").strip()
+        if not file_name:
+            raise SearchException("Code list name is required to apply a structure rebase")
+        try:
+            index = int(req.media.get('index'))
+        except (TypeError, ValueError):
+            raise SearchException("A valid code index is required to apply a structure rebase")
+        address = (req.media.get('address') or "").strip().upper()
+        if not address:
+            raise SearchException("A resolved address is required to apply a structure rebase")
+
+        codelist_service = DataStore().get_service('codelist')
+        if not getattr(codelist_service, 'code_data', None) or codelist_service.loaded_file != file_name:
+            raise SearchException("Load the selected code list before applying a structure rebase")
+
+        proxy_req = type('ProxyReq', (), {'media': {'index': index, 'type': 'address', 'address': address}})()
+        if group_name:
+            proxy_req.media['rebase_group'] = group_name
+        proxy_resp = type('ProxyResp', (), {'media': {}})()
+        try:
+            codelist_service.handle_rebase(proxy_req, proxy_resp)
+        except CodelistException as exc:
+            raise SearchException(exc.get_message()) from exc
+        resp.media.update(proxy_resp.media)
+
+    def _normalize_structure_group(self, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if not trimmed:
+                return CodeList._DEFAULT_REBASE_GROUP
+            if trimmed.casefold() == CodeList._DEFAULT_REBASE_GROUP:
+                return CodeList._DEFAULT_REBASE_GROUP
+            return trimmed
+        return CodeList._DEFAULT_REBASE_GROUP
+
+    def _load_structure_groups(self, file_name: str):
+        path = CodeList.directory.joinpath(file_name + '.codes')
+        if not path.exists():
+            raise SearchException("Code list file was not found")
+        try:
+            with open(path, 'rt') as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SearchException("Unable to read the requested code list") from exc
+        if isinstance(data, dict):
+            codes = data.get('codes', [])
+        else:
+            codes = data
+
+        base_converter = BaseConvert()
+        groups = {}
+        for index, raw in enumerate(codes):
+            if not isinstance(raw, dict):
+                continue
+            if raw.get('Source') != 'address':
+                continue
+            group_name = self._normalize_structure_group(raw.get('rebase_group', CodeList._DEFAULT_REBASE_GROUP))
+            if group_name is None:
+                continue
+            address_value = raw.get('Address')
+            if not address_value:
+                continue
+            try:
+                resolved_address = self._resolve_structure_address(base_converter, str(address_value))
+            except (ValueError, BaseConvertException) as exc:
+                raise SearchException(f"Unable to resolve address for code index {index}") from exc
+            item_type = raw.get('Type', 'byte_4')
+            signed = bool(raw.get('Signed', False))
+            name = raw.get('Name', f'Code #{index}')
+            entry_key = group_name.casefold()
+            group_entry = groups.setdefault(entry_key, {'name': group_name, 'items': []})
+            if group_name != group_entry['name']:
+                group_entry['name'] = group_name
+            group_entry['items'].append({
+                'index': index,
+                'name': name,
+                'type': item_type,
+                'signed': signed,
+                'address': resolved_address,
+                'group': group_name,
+            })
+
+        filtered = {}
+        for key, entry in groups.items():
+            if not entry['items']:
+                continue
+            entry['items'].sort(key=lambda item: (item['address'], item['index']))
+            base_item = entry['items'][0]
+            for item in entry['items']:
+                item['offset'] = item['address'] - base_item['address']
+            entry['base'] = base_item
+            filtered[key] = entry
+
+        if not filtered:
+            raise SearchException("No eligible address entries were found in the selected code list")
+        return filtered
+
+    def _resolve_structure_address(self, converter: BaseConvert, address: str) -> int:
+        address = address.strip()
+        if ':' in address:
+            if not self.has_mem():
+                raise SearchException("Attach to a process before resolving module-relative addresses")
+            return converter.convert(self.mem(), address)
+        return int(address, 16)
+
+    def _read_typed_value(self, address: int, value_type: str, signed: bool):
+        buffer = memory_utils.get_ctype_from_size(value_type)
+        self.mem().read_memory(address, buffer)
+        ctype_value = memory_utils.get_ctype_from_buffer(buffer, value_type, signed)
+        return ctype_value.value
+
+    def _parse_known_values(self, known_values: dict, items: list):
+        parsed = {}
+        indexed_items = {item['index']: item for item in items}
+        for key, raw_value in known_values.items():
+            try:
+                idx = int(key)
+            except (TypeError, ValueError):
+                continue
+            if idx not in indexed_items:
+                continue
+            value_str = str(raw_value).strip()
+            if value_str == "":
+                continue
+            item = indexed_items[idx]
+            if item['type'] == 'float':
+                try:
+                    parsed[idx] = float(value_str)
+                except ValueError as exc:
+                    raise SearchException(f"Invalid float value for {item['name']}") from exc
+            else:
+                try:
+                    parsed[idx] = int(value_str, 0)
+                except ValueError as exc:
+                    raise SearchException(f"Invalid integer value for {item['name']}") from exc
+        return parsed
+
+    def _value_matches(self, expected, actual, value_type: str) -> bool:
+        if value_type == 'float':
+            return math.isclose(expected, actual, abs_tol=0.001)
+        return expected == actual
+
+    def _structure_candidate_matches(self, base_address: int, items: list, base_item: dict, known_values: dict) -> bool:
+        for item in items:
+            if item['index'] == base_item['index']:
+                continue
+            if item['index'] not in known_values:
+                continue
+            candidate_address = base_address + item['offset']
+            try:
+                candidate_value = self._read_typed_value(candidate_address, item['type'], item['signed'])
+            except OSError:
+                return False
+            if not self._value_matches(known_values[item['index']], candidate_value, item['type']):
+                return False
+        return True
 
     class UpdateThread(Thread):
         def __init__(self, mem, addrs, pv: Value, s: Searcher):
