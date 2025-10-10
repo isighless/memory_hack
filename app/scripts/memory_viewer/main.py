@@ -32,7 +32,7 @@ class MemoryViewer(BaseScript):
         return {
             'title': "Memory Viewer",
             'author': "Ryan Kegel",
-            'version': '1.0.0'}
+            'version': '1.0.1'}
 
     def build_ui(self):
         ps_page = self.ui.add_page(controls.Page())
@@ -115,9 +115,13 @@ class MemoryViewer(BaseScript):
         return self.get_data("SYSTEM") == 'Linux'
 
     def get_memory_bytes(self, address: int, size: int):
+        aligned_address = address & ~0xF
+        bounds = self.memory_manager.get_base_bounds("{:x}".format(address))
+        if aligned_address < bounds[0]:
+            aligned_address = bounds[0]
         data = (ctypes.c_ubyte * size)()
-        self.memory_manager.memory.read_memory(address, data)
-        cast(MemoryControl, self.ui.get_element('MEMORY_CONTROL')).set_data(bytes(data), address=address)
+        self.memory_manager.memory.read_memory(aligned_address, data)
+        cast(MemoryControl, self.ui.get_element('MEMORY_CONTROL')).set_data(bytes(data), address=address, base_address=aligned_address)
 
     def write(self, addr: int, val):
         self.memory.write_memory(addr, val)
