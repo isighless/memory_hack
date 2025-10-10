@@ -32,7 +32,7 @@
       </ons-row>
 
       <ons-row id="row_search_size">
-        <ons-col align="center" width="20%" class="col ons-col-inner">Search Size:</ons-col>
+        <ons-col align="center" width="20%" class="col ons-col-inner">Data Type:</ons-col>
         <ons-col align="center" width="24%" class="col ons-col-inner">
           <select name="search_size" id="search_size" class="select-input select-input--material" onchange="search.search_size_changed(this.val)">
             <option value="byte_1">BYTE</option>
@@ -41,6 +41,7 @@
             <option value="byte_8">8 BYTES</option>
             <option value="float">FLOAT</option>
             <option value="array">ARRAY</option>
+            <option value="structure">Structure search (rebase group)</option>
           </select>
         </ons-col>
         <ons-col align="center" class="col ons-col-inner"></ons-col>
@@ -92,7 +93,44 @@
         <ons-col align="center" width="50px" class="col ons-col-inner"><ons-button id="search_paste_button" modifier="material--flat" onclick="document.clipboard.paste(search, 'search')"><ons-icon style="color:#777;" size="28px" icon="md-paste"></ons-icon></ons-button></ons-col>
       </ons-row>
 
-      <ons-row style="margin-top:15px;">
+      <div id="structure_search_block" hidden>
+        <ons-row class="structure-row">
+          <ons-col align="center" width="20%" class="col ons-col-inner">Code list:</ons-col>
+          <ons-col align="center" width="55%" class="col ons-col-inner">
+            <select id="structure_file_selection" class="select-input select-input--material">
+              <option value=""></option>
+            </select>
+          </ons-col>
+          <ons-col align="center" width="25%" class="col ons-col-inner structure-row-actions">
+            <ons-button id="structure_refresh_files" modifier="quiet"><ons-icon icon="md-refresh"></ons-icon></ons-button>
+          </ons-col>
+        </ons-row>
+        <ons-row class="structure-row">
+          <ons-col align="center" width="20%" class="col ons-col-inner">Rebase group:</ons-col>
+          <ons-col align="center" width="55%" class="col ons-col-inner">
+            <select id="structure_group_selection" class="select-input select-input--material" disabled>
+              <option value=""></option>
+            </select>
+          </ons-col>
+          <ons-col align="center" width="25%" class="col ons-col-inner"></ons-col>
+        </ons-row>
+        <div id="structure_items_section" hidden>
+          <p id="structure_items_empty" class="structure-empty" hidden>Select a rebase group to view its items.</p>
+          <table class="structure-item-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Type</th>
+                <th>Offset</th>
+                <th>Known value</th>
+              </tr>
+            </thead>
+            <tbody id="structure_items_body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <ons-row id="search_standard_actions" style="margin-top:15px;">
         <ons-col align="center" width="20%" class="col ons-col-inner">
         </ons-col>
         <ons-col align="center" width="23%" class="col ons-col-inner">
@@ -100,6 +138,16 @@
         </ons-col>
         <ons-col align="center" width="20%" class="col ons-col-inner">
           <ons-button id="search_reset_button" onclick="search.on_reset_clicked()">Reset</ons-button>
+        </ons-col>
+      </ons-row>
+
+      <ons-row id="structure_actions_row" style="margin-top:15px;" hidden>
+        <ons-col align="center" width="20%" class="col ons-col-inner"></ons-col>
+        <ons-col align="center" width="23%" class="col ons-col-inner">
+          <ons-button id="structure_run_button">Run structure search</ons-button>
+        </ons-col>
+        <ons-col align="center" width="20%" class="col ons-col-inner">
+          <ons-button id="structure_reset_button" modifier="outline">Clear</ons-button>
         </ons-col>
       </ons-row>
     </div>
@@ -137,6 +185,14 @@
             </ons-row>
         </ons-list-item>
       </ons-list>
+    </div>
+
+    <div id="structure_results" hidden>
+      <div class="structure-results-header">
+        <span id="structure_results_count"></span>
+      </div>
+      <p id="structure_results_empty" class="structure-empty" hidden>No matching structures were found.</p>
+      <div id="structure_results_list"></div>
     </div>
   </div>
 </ons-page>

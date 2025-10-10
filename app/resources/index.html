@@ -284,6 +284,20 @@ div .input_item{
     </ons-popover>
   </ons-template>
 
+  <template id="rebase_group_create">
+    <ons-alert-dialog id="rebase_group_create_dialog" modifier="rowfooter">
+      <div class="alert-dialog-title">New rebase group</div>
+      <div class="alert-dialog-content">
+        <p>Name for the new rebase group:</p>
+        <input type="text" id="rebase_group_name_input" class="text-input text-input--material text-full" autocomplete="off" autocapitalize="off">
+      </div>
+      <div class="alert-dialog-footer">
+        <ons-alert-dialog-button name="cancel_button">Cancel</ons-alert-dialog-button>
+        <ons-alert-dialog-button name="save_button">Save</ons-alert-dialog-button>
+      </div>
+    </ons-alert-dialog>
+  </template>
+
   <template id="delete_code_file">
     <ons-alert-dialog id="delete_code_file_dialog" modifier="rowfooter">
       <div class="alert-dialog-title">Delete</div>

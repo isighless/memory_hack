@@ -22,6 +22,22 @@
     var row_search_progress;
     var row_search_initialize_unknown;
     var search_progress;
+    var row_search_actions;
+
+    var structure_block;
+    var structure_file_select;
+    var structure_refresh_button;
+    var structure_group_select;
+    var structure_items_section;
+    var structure_items_body;
+    var structure_items_empty;
+    var structure_actions_row;
+    var structure_run_button;
+    var structure_reset_button;
+    var structure_results;
+    var structure_results_list;
+    var structure_results_count;
+    var structure_results_empty;
 
     var switch_search_proximity;
     var inp_search_proximity_address;
@@ -61,6 +77,22 @@
     var proxy_valid = false
     search.updater = null
 
+    var structure_state = {
+        active: false,
+        files_loaded: false,
+        loading_files: false,
+        loading_groups: false,
+        running: false,
+        file: "",
+        groups: [],
+        group_map: {},
+        group: "",
+        items: [],
+        base_index: null,
+        known_values: {},
+        results: [],
+    }
+
 
     //Public Property
 
@@ -71,6 +103,12 @@
 
     search.search_size_changed = function(option) {
         update()
+        if (sel_search_size && sel_search_size.val() === 'structure') {
+            set_structure_mode_active(true)
+            ensure_structure_files(false)
+        } else {
+            set_structure_mode_active(false)
+        }
     };
 
     search.search_value_changed = function(value) {
@@ -102,6 +140,10 @@
     }
 
     search.on_search_clicked = function() {
+        if (sel_search_size && sel_search_size.val() === 'structure') {
+            run_structure_search()
+            return
+        }
         var size = sel_search_size.val()
         var type = sel_search_type.val()
         $.send('/search',
@@ -118,6 +160,10 @@
     };
 
     search.on_reset_clicked = function() {
+        if (sel_search_size && sel_search_size.val() === 'structure') {
+            reset_structure_search(true)
+            return
+        }
         btn_reset_button.attr('disabled', 'disabled')
         btn_search_button.attr('disabled', 'disabled')
         switch_search_aligned.prop('checked', true)
@@ -307,6 +353,10 @@
     }
 
     function setup_search_type(result) {
+        if (is_structure_mode_selected()) {
+            row_search_type.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 sel_search_type.removeAttr('disabled')
@@ -382,6 +432,11 @@
     }
 
     function setup_search_size(result) {
+        var structure_active = is_structure_mode_selected()
+        set_structure_mode_active(structure_active)
+        if (structure_active) {
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 if (has(result, 'type') && (result.type === 'unknown')) {
@@ -474,6 +529,10 @@
     }
 
     function setup_search_value(result) {
+        if (is_structure_mode_selected()) {
+            row_search_value.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 inp_search_value.removeAttr('disabled')
@@ -528,6 +587,10 @@
     }
 
     function setup_search_proximity(result) {
+        if (is_structure_mode_selected()) {
+            row_search_proximity.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 switch_search_proximity.removeAttr('disabled')
@@ -558,6 +621,10 @@
     }
 
     function setup_search_button(result) {
+        if (is_structure_mode_selected()) {
+            btn_search_button.attr('disabled', 'disabled')
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 btn_search_button.attr('disabled', 'disabled')
@@ -596,6 +663,10 @@
     }
 
     function setup_reset_button(result) {
+        if (is_structure_mode_selected()) {
+            btn_reset_button.attr('disabled', 'disabled')
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 btn_reset_button.attr('disabled', 'disabled')
@@ -621,6 +692,12 @@
     }
 
     function setup_results_progress(result) {
+        if (is_structure_mode_selected()) {
+            div_search_results.hide()
+            row_search_progress.hide()
+            row_search_initialize_unknown.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 div_search_results.hide()
@@ -651,6 +728,11 @@
         }
     }
     function setup_results_list(result) {
+        if (is_structure_mode_selected()) {
+            div_search_results.hide()
+            list_search_result_list.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 div_search_results.hide()
@@ -700,9 +782,530 @@
         update_reset_button(st, ss, value, proxy)
         update_results_progress(st, ss, value, proxy)
         update_results_list(st, ss, value, proxy)
+        update_structure_controls()
+    }
+
+    function is_structure_mode_selected() {
+        return sel_search_size && typeof sel_search_size.val === 'function' && sel_search_size.val() === 'structure'
+    }
+
+    function set_structure_mode_active(active) {
+        if (!structure_block) {
+            return
+        }
+        if (active) {
+            if (!structure_state.active) {
+                structure_block.show()
+                if (structure_actions_row) {
+                    structure_actions_row.show()
+                }
+                if (row_search_actions) {
+                    row_search_actions.hide()
+                }
+                div_search_results.hide()
+                row_search_progress.hide()
+                row_search_initialize_unknown.hide()
+                ensure_structure_files(false)
+            }
+            if (structure_results) {
+                structure_results.toggle(structure_state.results.length > 0)
+            }
+        } else if (structure_state.active) {
+            structure_block.hide()
+            if (structure_actions_row) {
+                structure_actions_row.hide()
+            }
+            if (row_search_actions) {
+                row_search_actions.show()
+            }
+            if (structure_results) {
+                structure_results.hide()
+            }
+        }
+        structure_state.active = active
+        update_structure_controls()
+    }
+
+    function structure_show_error(message) {
+        if (message) {
+            ons.notification.toast(message, { timeout: 4000, animation: 'fall' })
+        }
+    }
+
+    function ensure_structure_files(force) {
+        if (!structure_block || structure_state.loading_files) {
+            return
+        }
+        if (!force && structure_state.files_loaded) {
+            return
+        }
+        structure_state.loading_files = true
+        if (structure_file_select) {
+            structure_file_select.attr('disabled', 'disabled')
+        }
+        update_structure_controls()
+        $.send('/codelist', { 'command': 'CODELIST_GET' }, function(result) {
+            structure_state.loading_files = false
+            if (!result) {
+                update_structure_controls()
+                return
+            }
+            if (result.error) {
+                structure_show_error(result.error)
+            }
+            var files = Array.isArray(result.files) ? result.files : []
+            if (structure_file_select) {
+                structure_file_select.find('option[value!=""]').remove()
+                files.forEach(function(name) {
+                    structure_file_select.append($('<option>', { value: name, text: name }))
+                })
+            }
+            var preferred = structure_state.file || ''
+            if (result.file && files.indexOf(result.file) >= 0) {
+                preferred = result.file
+            } else if (preferred && files.indexOf(preferred) < 0) {
+                preferred = ''
+            }
+            structure_state.files_loaded = true
+            structure_state.file = preferred
+            if (structure_file_select) {
+                structure_file_select.removeAttr('disabled')
+                structure_file_select.val(preferred)
+            }
+            on_structure_file_change(true)
+            update_structure_controls()
+        })
+    }
+
+    function on_structure_file_change(force) {
+        if (!structure_file_select) {
+            return
+        }
+        var selected = (structure_file_select.val() || '').trim()
+        if (!force && selected === structure_state.file) {
+            update_structure_controls()
+            return
+        }
+        structure_state.file = selected
+        structure_state.group = ""
+        structure_state.groups = []
+        structure_state.group_map = {}
+        structure_state.items = []
+        structure_state.base_index = null
+        if (structure_group_select) {
+            structure_group_select.find('option[value!=""]').remove()
+            structure_group_select.val('')
+            structure_group_select.attr('disabled', 'disabled')
+        }
+        if (structure_items_body) {
+            structure_items_body.empty()
+        }
+        if (structure_items_section) {
+            structure_items_section.hide()
+        }
+        if (structure_items_empty) {
+            structure_items_empty.text('Select a rebase group to view its items.')
+            structure_items_empty.hide()
+        }
+        reset_structure_search(true)
+        if (!selected) {
+            update_structure_controls()
+            return
+        }
+        if (structure_items_section) {
+            structure_items_section.show()
+        }
+        if (structure_items_empty) {
+            structure_items_empty.text('Loading group data…')
+            structure_items_empty.show()
+        }
+        load_structure_groups(selected)
+    }
+
+    function load_structure_groups(file) {
+        if (!file) {
+            return
+        }
+        structure_state.loading_groups = true
+        if (structure_group_select) {
+            structure_group_select.attr('disabled', 'disabled')
+        }
+        update_structure_controls()
+        $.send('/search', { 'command': 'SEARCH_STRUCTURE_GROUPS', 'file': file }, function(result) {
+            structure_state.loading_groups = false
+            if (!result) {
+                update_structure_controls()
+                return
+            }
+            if (result.error) {
+                structure_show_error(result.error)
+                if (structure_items_empty) {
+                    structure_items_empty.text('Unable to load rebase groups.')
+                    structure_items_empty.show()
+                }
+                update_structure_controls()
+                return
+            }
+            var groups = Array.isArray(result.groups) ? result.groups : []
+            structure_state.groups = groups
+            structure_state.group_map = {}
+            if (structure_group_select) {
+                structure_group_select.find('option[value!=""]').remove()
+                groups.forEach(function(entry) {
+                    structure_state.group_map[entry.name] = entry
+                    structure_group_select.append($('<option>', { value: entry.name, text: entry.name }))
+                })
+            }
+            if (groups.length > 0) {
+                if (structure_group_select) {
+                    structure_group_select.removeAttr('disabled')
+                }
+                if (structure_items_empty) {
+                    structure_items_empty.text('Select a rebase group to view its items.')
+                    structure_items_empty.show()
+                }
+            } else if (structure_items_empty) {
+                structure_items_empty.text('No eligible rebase groups were found in this list.')
+                structure_items_empty.show()
+            }
+            structure_state.group = ""
+            structure_state.items = []
+            structure_state.base_index = null
+            update_structure_controls()
+        })
+    }
+
+    function on_structure_group_change() {
+        if (!structure_group_select) {
+            return
+        }
+        var selected = (structure_group_select.val() || '').trim()
+        if (!selected || !structure_state.group_map.hasOwnProperty(selected)) {
+            structure_state.group = ""
+            structure_state.items = []
+            structure_state.base_index = null
+            reset_structure_search(true)
+            if (structure_items_empty) {
+                structure_items_empty.text('Select a rebase group to view its items.')
+                structure_items_empty.show()
+            }
+            if (structure_items_body) {
+                structure_items_body.empty()
+            }
+            update_structure_controls()
+            return
+        }
+        var entry = structure_state.group_map[selected]
+        structure_state.group = entry.name
+        structure_state.known_values = {}
+        render_structure_items(entry)
+        reset_structure_search(false)
+        update_structure_controls()
+    }
+
+    function describe_structure_type(value_type, signed) {
+        if (value_type === 'float') {
+            return 'Float'
+        }
+        if (value_type === 'array') {
+            return 'Array'
+        }
+        if (typeof value_type === 'string' && value_type.indexOf('byte_') === 0) {
+            var size = value_type.split('_')[1]
+            var label = size + ' bytes'
+            if (size === '1') {
+                label = '1 byte'
+            }
+            if (signed) {
+                return label + ' (signed)'
+            }
+            return label
+        }
+        return value_type
+    }
+
+    function format_structure_offset(offset) {
+        var value = Math.abs(Number(offset) || 0)
+        var hex = value.toString(16).toUpperCase()
+        if (hex.length < 4) {
+            hex = hex.padStart(4, '0')
+        }
+        var prefix = offset >= 0 ? '+' : '-'
+        return prefix + '0x' + hex
+    }
+
+    function render_structure_items(entry) {
+        if (!structure_items_body) {
+            return
+        }
+        structure_items_body.empty()
+        structure_state.items = Array.isArray(entry.items) ? entry.items : []
+        structure_state.base_index = entry.base_index
+        if (structure_state.items.length === 0) {
+            if (structure_items_empty) {
+                structure_items_empty.text('No address entries were found in this group.')
+                structure_items_empty.show()
+            }
+            return
+        }
+        if (structure_items_empty) {
+            structure_items_empty.hide()
+        }
+        structure_state.items.forEach(function(item) {
+            var row = $('<tr>')
+            var item_name = item.name || ('Code #' + item.index)
+            var name_cell = $('<td>')
+            name_cell.append($('<span>').text(item_name))
+            if (item.index === entry.base_index) {
+                name_cell.append($('<span>').addClass('structure-base-badge').text('Base'))
+            }
+            row.append(name_cell)
+            row.append($('<td>').text(describe_structure_type(item.type, item.signed)))
+            row.append($('<td>').text(format_structure_offset(item.offset)))
+            var input_cell = $('<td>')
+            var input = $('<input>', {
+                'class': 'text-input text-input--material structure-known-input',
+                'data-index': item.index,
+                'autocomplete': 'off',
+                'placeholder': 'Unknown'
+            })
+            if (item.type === 'float') {
+                input.attr('inputmode', 'decimal')
+            } else {
+                input.attr('inputmode', 'numeric')
+            }
+            input.on('input', function() {
+                var value = $(this).val().trim()
+                var key = String(item.index)
+                if (value) {
+                    structure_state.known_values[key] = value
+                } else if (structure_state.known_values.hasOwnProperty(key)) {
+                    delete structure_state.known_values[key]
+                }
+                update_structure_controls()
+            })
+            var key = String(item.index)
+            if (structure_state.known_values.hasOwnProperty(key)) {
+                input.val(structure_state.known_values[key])
+            }
+            input_cell.append(input)
+            row.append(input_cell)
+            structure_items_body.append(row)
+        })
+    }
+
+    function reset_structure_search(clear_inputs) {
+        structure_state.results = []
+        structure_state.running = false
+        if (clear_inputs) {
+            structure_state.known_values = {}
+            if (structure_items_body) {
+                structure_items_body.find('input').val('')
+            }
+        }
+        if (structure_results_list) {
+            structure_results_list.empty()
+        }
+        if (structure_results_count) {
+            structure_results_count.text('')
+        }
+        if (structure_results_empty) {
+            structure_results_empty.hide()
+        }
+        if (structure_results) {
+            structure_results.hide()
+        }
+        update_structure_controls()
+    }
+
+    function collect_structure_known_values() {
+        var payload = {}
+        Object.keys(structure_state.known_values).forEach(function(key) {
+            var raw = structure_state.known_values[key]
+            if (typeof raw === 'string') {
+                var trimmed = raw.trim()
+                if (trimmed !== '') {
+                    payload[key] = trimmed
+                }
+            }
+        })
+        return payload
+    }
+
+    function run_structure_search() {
+        if (!structure_state.active) {
+            return
+        }
+        if (!structure_state.file || !structure_state.group || structure_state.items.length === 0 || structure_state.running) {
+            return
+        }
+        structure_state.running = true
+        if (structure_results_empty) {
+            structure_results_empty.hide()
+        }
+        if (structure_results) {
+            structure_results.hide()
+        }
+        update_structure_controls()
+        var payload = {
+            'command': 'SEARCH_STRUCTURE_RUN',
+            'file': structure_state.file,
+            'group': structure_state.group,
+            'known_values': JSON.stringify(collect_structure_known_values())
+        }
+        $.send('/search', payload, function(result) {
+            structure_state.running = false
+            if (!result) {
+                update_structure_controls()
+                return
+            }
+            if (result.error) {
+                structure_show_error(result.error)
+                update_structure_controls()
+                return
+            }
+            render_structure_results(result)
+            update_structure_controls()
+        })
+    }
+
+    function render_structure_results(result) {
+        if (!structure_results || !structure_results_list) {
+            return
+        }
+        var hits = Array.isArray(result.results) ? result.results : []
+        structure_state.results = hits
+        structure_results_list.empty()
+        if (structure_results_count) {
+            structure_results_count.text('Matches: ' + hits.length)
+        }
+        if (hits.length === 0) {
+            structure_results.show()
+            if (structure_results_empty) {
+                structure_results_empty.show()
+            }
+            return
+        }
+        if (structure_results_empty) {
+            structure_results_empty.hide()
+        }
+        hits.forEach(function(hit) {
+            var card = $('<div>').addClass('structure-result-card')
+            var header = $('<div>').addClass('structure-result-header')
+            header.append($('<div>').text('Base address: 0x' + hit.base_address))
+            var apply_button = $('<ons-button modifier="outline">Apply rebase</ons-button>')
+            apply_button.on('click', function() {
+                apply_structure_rebase(hit.base_index, hit.base_address)
+            })
+            header.append(apply_button)
+            card.append(header)
+            var table = $('<table>').addClass('structure-result-items')
+            table.append('<thead><tr><th>Item</th><th>Type</th><th>Offset</th><th>Resolved address</th></tr></thead>')
+            var tbody = $('<tbody>')
+            hit.items.forEach(function(item) {
+                var row = $('<tr>')
+                var item_name = item.name || ('Code #' + item.index)
+                var name_cell = $('<td>')
+                name_cell.append($('<span>').text(item_name))
+                if (item.index === hit.base_index) {
+                    name_cell.append($('<span>').addClass('structure-base-badge').text('Base'))
+                }
+                row.append(name_cell)
+                row.append($('<td>').text(describe_structure_type(item.type, item.signed)))
+                row.append($('<td>').text(format_structure_offset(item.offset)))
+                row.append($('<td>').text('0x' + item.address))
+                tbody.append(row)
+            })
+            table.append(tbody)
+            card.append(table)
+            structure_results_list.append(card)
+        })
+        structure_results.show()
+    }
+
+    function apply_structure_rebase(index, address) {
+        if (!structure_state.file || !structure_state.group) {
+            return
+        }
+        $.send('/search', {
+            'command': 'SEARCH_STRUCTURE_APPLY',
+            'file': structure_state.file,
+            'group': structure_state.group,
+            'index': index,
+            'address': address
+        }, function(result) {
+            if (!result) {
+                return
+            }
+            if (result.error) {
+                structure_show_error(result.error)
+                return
+            }
+            ons.notification.toast('Rebased code list using structure hit.', { timeout: 2500, animation: 'fall' })
+        })
+    }
+
+    function update_structure_controls() {
+        if (!structure_actions_row || !structure_run_button) {
+            return
+        }
+        if (!structure_state.active) {
+            structure_actions_row.hide()
+            if (row_search_actions) {
+                row_search_actions.show()
+            }
+            return
+        }
+        structure_actions_row.show()
+        if (row_search_actions) {
+            row_search_actions.hide()
+        }
+        if (structure_state.running) {
+            structure_run_button.attr('disabled', 'disabled')
+            structure_run_button.text('Searching…')
+        } else {
+            var can_run = !!structure_state.file && !!structure_state.group && structure_state.items.length > 0 && !structure_state.loading_groups && !structure_state.loading_files
+            if (can_run) {
+                structure_run_button.removeAttr('disabled')
+            } else {
+                structure_run_button.attr('disabled', 'disabled')
+            }
+            structure_run_button.text('Run structure search')
+        }
+        var disable_selects = structure_state.running
+        if (structure_file_select) {
+            if (disable_selects || structure_state.loading_files) {
+                structure_file_select.attr('disabled', 'disabled')
+            } else {
+                structure_file_select.removeAttr('disabled')
+            }
+        }
+        if (structure_refresh_button) {
+            if (disable_selects || structure_state.loading_files) {
+                structure_refresh_button.attr('disabled', 'disabled')
+            } else {
+                structure_refresh_button.removeAttr('disabled')
+            }
+        }
+        if (structure_group_select) {
+            if (disable_selects || structure_state.loading_groups || !structure_state.file || structure_state.groups.length === 0) {
+                structure_group_select.attr('disabled', 'disabled')
+            } else {
+                structure_group_select.removeAttr('disabled')
+            }
+        }
+        if (structure_state.running || (Object.keys(structure_state.known_values).length === 0 && structure_state.results.length === 0)) {
+            structure_reset_button.attr('disabled', 'disabled')
+        } else {
+            structure_reset_button.removeAttr('disabled')
+        }
     }
 
     function update_search_type(_type, _size, _value, _proxy) {
+        if (_size === 'structure') {
+            row_search_type.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 sel_search_type.removeAttr('disabled')
@@ -775,6 +1378,11 @@
     }
 
     function update_search_size(_type, _size, _value, _proxy) {
+        if (_size === 'structure') {
+            set_structure_mode_active(true)
+            return
+        }
+        set_structure_mode_active(false)
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 sel_search_size.removeAttr('disabled')
@@ -836,6 +1444,10 @@
     }
 
     function update_search_value(_type, _size, _value, _proxy) {
+        if (_size === 'structure') {
+            row_search_value.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 inp_search_value.removeAttr('disabled')
@@ -880,6 +1492,10 @@
     }
 
     function update_search_proximity(_type, _size, _value, _proxy) {
+        if (_size === 'structure') {
+            row_search_proximity.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 switch_search_proximity.removeAttr('disabled')
@@ -905,6 +1521,10 @@
     }
 
     function update_search_button(_type, _size, _value, _proxy) {
+        if (_size === 'structure') {
+            btn_search_button.attr('disabled', 'disabled')
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 if (_type == 'unknown' && proxy_valid) {
@@ -946,6 +1566,10 @@
     }
 
     function update_reset_button(_type, _size, _value, _proxy) {
+        if (_size === 'structure') {
+            btn_reset_button.attr('disabled', 'disabled')
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 btn_reset_button.text("Reset")
@@ -966,6 +1590,10 @@
         }
     }
     function update_results_progress(_type, _size, _value, _proxy) {
+        if (_size === 'structure') {
+            div_search_results.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 div_search_results.hide()
@@ -978,6 +1606,11 @@
     }
 
     function update_results_list(_type, _size, _value, _proxy) {
+        if (_size === 'structure') {
+            div_search_results.hide()
+            list_search_result_list.hide()
+            return
+        }
         switch (current_flow) {
             case flow_map["FLOW_START"]:
                 div_search_results.hide()
@@ -1093,6 +1726,22 @@
         row_search_initialize_unknown = $("#search_initialize_unknown_row")
         row_search_progress = $("#search_progress_row")
         search_progress = $("#search_progress")
+        row_search_actions = $("#search_standard_actions")
+
+        structure_block = $("#structure_search_block")
+        structure_file_select = $("#structure_file_selection")
+        structure_refresh_button = $("#structure_refresh_files")
+        structure_group_select = $("#structure_group_selection")
+        structure_items_section = $("#structure_items_section")
+        structure_items_body = $("#structure_items_body")
+        structure_items_empty = $("#structure_items_empty")
+        structure_actions_row = $("#structure_actions_row")
+        structure_run_button = $("#structure_run_button")
+        structure_reset_button = $("#structure_reset_button")
+        structure_results = $("#structure_results")
+        structure_results_list = $("#structure_results_list")
+        structure_results_count = $("#structure_results_count")
+        structure_results_empty = $("#structure_results_empty")
 
         switch_search_proximity = $("#search_proximity_switch")
         inp_search_proximity_address = $("#search_proximity_address")
@@ -1100,6 +1749,12 @@
 
         row_search_aligned = $("#row_search_aligned")
         switch_search_aligned = $("#search_aligned_switch")
+
+        structure_refresh_button.on('click', function() { ensure_structure_files(true) })
+        structure_file_select.on('change', function() { on_structure_file_change(false) })
+        structure_group_select.on('change', on_structure_group_change)
+        structure_run_button.on('click', run_structure_search)
+        structure_reset_button.on('click', function() { reset_structure_search(true) })
 
         //$.send('/search', { "command": "SEARCH_INITIALIZE" }, on_search_status);
     };

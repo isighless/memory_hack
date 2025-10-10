@@ -12,6 +12,117 @@
     var aob_resolve_map = {}
     var pointer_resolve_map = {}
     var value_map = {}
+    var rebase_group_state = {
+        DEFAULT: "default",
+        NEW_SENTINEL: "__new__",
+        NONE_SENTINEL: "__none__",
+        groups: [],
+        normalized: {},
+        reset: function(codeData) {
+            this.groups = []
+            this.normalized = {}
+            this.addGroup(this.DEFAULT)
+            if (!codeData) {
+                return
+            }
+            $.each(codeData, function(key, item) {
+                if (!item) {
+                    return
+                }
+                var value = item.rebase_group
+                if (value === undefined) {
+                    value = rebase_group_state.DEFAULT
+                }
+                if (value !== null) {
+                    rebase_group_state.addGroup(value)
+                }
+            })
+            this.sortGroups()
+        },
+        addGroup: function(name) {
+            if (typeof name !== 'string') {
+                return this.DEFAULT
+            }
+            var trimmed = name.trim()
+            if (!trimmed) {
+                trimmed = this.DEFAULT
+            }
+            var key = trimmed.toLowerCase()
+            if (!this.normalized.hasOwnProperty(key)) {
+                this.normalized[key] = trimmed
+                this.groups.push(trimmed)
+            }
+            return this.normalized[key]
+        },
+        has: function(name) {
+            if (typeof name !== 'string') {
+                return false
+            }
+            var key = name.trim().toLowerCase()
+            if (!key) {
+                return false
+            }
+            return this.normalized.hasOwnProperty(key)
+        },
+        canonical: function(name) {
+            if (typeof name !== 'string') {
+                return undefined
+            }
+            var key = name.trim().toLowerCase()
+            if (!key) {
+                return undefined
+            }
+            return this.normalized[key]
+        },
+        sortGroups: function() {
+            var defaultKey = this.DEFAULT.toLowerCase()
+            this.groups.sort(function(a, b) {
+                var al = a.toLowerCase()
+                var bl = b.toLowerCase()
+                if (al === defaultKey) {
+                    return -1
+                }
+                if (bl === defaultKey) {
+                    return 1
+                }
+                return a.localeCompare(b, undefined, { sensitivity: 'base' })
+            })
+        },
+        getOptionList: function() {
+            var options = []
+            options.push({ value: this.DEFAULT, label: this.labelFor(this.DEFAULT) })
+            for (var i = 0; i < this.groups.length; i++) {
+                var group = this.groups[i]
+                if (group.toLowerCase() === this.DEFAULT) {
+                    continue
+                }
+                options.push({ value: group, label: group })
+            }
+            options.push({ value: this.NEW_SENTINEL, label: 'New rebase group…' })
+            options.push({ value: this.NONE_SENTINEL, label: 'None' })
+            return options
+        },
+        labelFor: function(value) {
+            if (value === null) {
+                return 'None'
+            }
+            if (typeof value === 'string' && value.toLowerCase() === this.DEFAULT) {
+                return 'Default'
+            }
+            return value
+        },
+        nextSuggestion: function() {
+            var index = 1
+            while (index < 1000) {
+                var candidate = 'group ' + index.toString().padStart(2, '0')
+                if (!this.has(candidate)) {
+                    return candidate
+                }
+                index += 1
+            }
+            return 'group ' + Date.now()
+        }
+    }
 
     //public vars
     codelist.updater = null
@@ -204,6 +315,7 @@
                 var cmd = { 'command': "CODELIST_ADD_CODE", 'type': 'aob_from_address',
                               'address': new_address,
                               'index': code_index}
+                append_rebase_group_payload(cmd, resolve_code_group_value(code_index))
 
                 $.send('/codelist', cmd, on_codelist_status);
                 break
@@ -353,6 +465,28 @@
         return component_code_rebase_dialog
     }
 
+    codelist.on_rebase_group_updated = function(index, groupValue) {
+    }
+
+    codelist.on_rebase_group_changed = function(ele, index) {
+        if (typeof event !== 'undefined') {
+            event.stopPropagation()
+        }
+        var value = ele.value
+        var key = index.toString()
+        if (value === rebase_group_state.NEW_SENTINEL) {
+            var currentValue = resolve_code_group_value(key)
+            render_rebase_group_options($(ele), currentValue)
+            component_rebase_group_dialog.create({
+                index: key,
+                select: ele,
+                previousValue: currentValue
+            })
+            return
+        }
+        apply_rebase_group_selection(key, value)
+    }
+
 
     codelist.address_copy = function(index) {
         var source = code_data[index]['Source']
@@ -418,6 +552,7 @@
                               'offset': has(data, 'offset') ? data.offset : 0,
                               'offsets': has(data, 'offsets') ? data.offsets : 0
                               }
+        append_rebase_group_payload(cmd, rebase_group_state.DEFAULT)
         $.send('/codelist', cmd, on_codelist_status);
     }
 
@@ -435,6 +570,7 @@
     function on_codelist_status(result) {
         if (has(result, 'file_data')) {
             code_data = result.file_data
+            rebuild_rebase_groups()
             component_code_list.empty()
             if (result.file_data === null) {
                 code_list = undefined
@@ -444,6 +580,7 @@
                 code_list.setup(result, code_list)
                 code_list.obj = $('#code_list')
                 apply_events(code_list)
+                component_code_list.refresh_groups()
             }
         } else if (code_list !== undefined) {
             code_list.setup(result, code_list)
@@ -596,6 +733,8 @@
                 _this.children[index][0].obj.remove()
                 _this.children[index][1].obj.remove()
                 _this.children.splice(index, 1)
+                delete code_data[id]
+                rebuild_rebase_groups()
             }
             else if (has(result, 'new_code')) {
                 var code = result.new_code
@@ -605,6 +744,7 @@
                 _this.obj.append(head.obj)
                 _this.obj.append(comp.obj)
                 code_data[result.index] = code
+                rebuild_rebase_groups()
                 head.setup(code, head)
                 comp.setup(code, comp)
                 apply_events(head)
@@ -626,6 +766,7 @@
                 code_data[result.index] = code
                 apply_events(head)
                 apply_events(comp)
+                rebuild_rebase_groups()
                 head.setup(code, head)
                 comp.setup(code, comp)
             }
@@ -650,6 +791,14 @@
                     head.setup(code, head)
                     comp.setup(code, comp)
                 });
+                rebuild_rebase_groups()
+            }
+            else if (has(result, 'rebase_group') && has(result, 'index')) {
+                var groupIndex = result.index.toString()
+                if (code_data && Object.prototype.hasOwnProperty.call(code_data, groupIndex)) {
+                    code_data[groupIndex].rebase_group = result.rebase_group
+                    rebuild_rebase_groups()
+                }
             }
         },
         'update': (_this) => {},
@@ -658,6 +807,13 @@
             $('#code_list').empty()
             component_code_list.obj = $('#code_list')
             while (component_code_list.children.length) { component_code_list.children.pop(); }
+        },
+        'refresh_groups': () => {
+            component_code_list.children.forEach((pair) => {
+                pair.forEach((component) => {
+                    refresh_group_component(component)
+                })
+            })
         },
         'children': []
     }
@@ -712,6 +868,7 @@
             //create the elements
             t.children = []
             t.children.push(component_row_value.create(index))
+            t.children.push(component_row_rebase_group.create(index))
             if (data.Source == 'address') {
                 t.children.push(component_row_address.create(index))
             } else if (data.Source == 'pointer') {
@@ -763,9 +920,11 @@
             t.obj = $(ons.createElement(t.template))
             var cc_name = component_code_name.create(index)
             t.obj.find('ons-col').eq(0).append(cc_name.obj)
+            var cc_group_badge = component_code_group_badge.create(index)
+            t.obj.find('ons-col').eq(0).append(cc_group_badge.obj)
             var cc_options = component_code_options.create(index)
             t.obj.find('ons-col').eq(1).append(cc_options.obj)
-            t.children = [cc_name, cc_options]
+            t.children = [cc_name, cc_group_badge, cc_options]
             return t;
         },
         'children': []
@@ -852,6 +1011,88 @@
             return t;
         },
         'children': []
+    }
+    var component_row_rebase_group = {
+        'id': 'row_rebase_group_',
+        'obj': undefined,
+        'index': -1,
+        'setup': (result, _this) => {
+            _this.children.forEach((item) => {
+                item.setup(result, item)
+            })
+        },
+        'update': (_this) => {},
+        'template': `<ons-row id="##id##" class="rebase-group-row">
+                        <ons-col align="center" width="25%" class="col ons-col-inner">
+                            Rebase group:
+                        </ons-col>
+                        <ons-col align="center" width="65%" class="col ons-col-inner">
+                        </ons-col>
+                    </ons-row>`,
+        'create': index => {
+            var t = {...component_row_rebase_group};
+            t.id = component_row_rebase_group.id+index
+            t.index = index
+            t.template = component_row_rebase_group.template.replaceAll("##index##", index).replaceAll('##id##', t.id)
+            t.obj = $(ons.createElement(t.template))
+            var cc_group_select = component_code_group_select.create(index)
+            t.obj.find('ons-col').eq(1).append(cc_group_select.obj)
+            t.children = [cc_group_select]
+            return t;
+        },
+        'children': []
+    }
+    var component_code_group_select = {
+        'id': 'code_component_group_select_',
+        'obj': undefined,
+        'index': -1,
+        'setup': (result, _this) => {
+            if (has(result, 'rebase_group')) {
+                render_rebase_group_options(_this.obj, normalize_group_value(result.rebase_group))
+            }
+        },
+        'update': (_this) => {},
+        'refresh_group_options': (_this) => {
+            render_rebase_group_options(_this.obj, resolve_code_group_value(_this.index))
+        },
+        'template': '<select id="##id##" class="select-input select-input--material rebase-group-select" style="width:100%;" onchange="codelist.on_rebase_group_changed(this, ##index##)"></select>',
+        'create': index => {
+            var t = {...component_code_group_select};
+            t.id = component_code_group_select.id+index
+            t.index = index.toString()
+            t.template = component_code_group_select.template.replaceAll("##index##", index).replaceAll('##id##', t.id)
+            t.obj = $(ons.createElement(t.template))
+            t.obj.bind('click', function(){
+                if (typeof event !== 'undefined') {
+                    event.stopPropagation()
+                }
+            })
+            render_rebase_group_options(t.obj, resolve_code_group_value(t.index))
+            return t;
+        }
+    }
+    var component_code_group_badge = {
+        'id': 'code_component_group_badge_',
+        'obj': undefined,
+        'index': -1,
+        'setup': (result, _this) => {
+            var value = has(result, 'rebase_group') ? normalize_group_value(result.rebase_group) : resolve_code_group_value(_this.index)
+            update_group_badge(_this.obj.find('span'), value)
+        },
+        'update': (_this) => {},
+        'refresh_group_options': (_this) => {
+            update_group_badge(_this.obj.find('span'), resolve_code_group_value(_this.index))
+        },
+        'template': '<div id="##id##" class="rebase-group-badge-container"><span class="rebase-group-badge" hidden></span></div>',
+        'create': index => {
+            var t = {...component_code_group_badge};
+            t.id = component_code_group_badge.id+index
+            t.index = index.toString()
+            t.template = component_code_group_badge.template.replaceAll("##index##", index).replaceAll('##id##', t.id)
+            t.obj = $(ons.createElement(t.template))
+            update_group_badge(t.obj.find('span'), resolve_code_group_value(t.index))
+            return t;
+        }
     }
     var component_code_size = {
         'id': 'code_component_size_',
@@ -1433,6 +1674,8 @@
             if (component_code_dialog.index >= 0) {
                 cmd['index'] = component_code_dialog.index
             }
+            var groupValue = component_code_dialog.index >= 0 ? resolve_code_group_value(component_code_dialog.index) : rebase_group_state.DEFAULT
+            append_rebase_group_payload(cmd, groupValue)
 
             $.send('/codelist', cmd, on_codelist_status);
             component_code_dialog.obj[0].hide()
@@ -1544,12 +1787,225 @@
                                   'address': (component_code_rebase_dialog.type == 'address' ? $("#rebase_code_address").val() : $("#rebase_code_pointer").val()),
                                   'aob': $("#rebase_code_aob").val(),
                                   'offset': $("#rebase_code_offset").val(), 'offsets': $("#rebase_code_offsets").val()}
+            append_rebase_group_payload(cmd, resolve_code_group_value(component_code_rebase_dialog.index))
             $.send('/codelist', cmd, on_codelist_status)
             component_code_rebase_dialog.obj[0].hide()
         }
     }
 
 
+
+
+    function normalize_group_value(value) {
+        if (value === null) {
+            return null
+        }
+        if (value === undefined) {
+            return rebase_group_state.DEFAULT
+        }
+        if (typeof value !== 'string') {
+            return rebase_group_state.DEFAULT
+        }
+        return rebase_group_state.addGroup(value)
+    }
+
+    function resolve_code_group_value(index) {
+        var key = index.toString()
+        if (!code_data || !Object.prototype.hasOwnProperty.call(code_data, key)) {
+            return rebase_group_state.DEFAULT
+        }
+        var value = code_data[key].rebase_group
+        if (value === undefined) {
+            value = rebase_group_state.DEFAULT
+        }
+        if (value === null) {
+            return null
+        }
+        return rebase_group_state.addGroup(value)
+    }
+
+    function render_rebase_group_options(element, value) {
+        var target = element instanceof jQuery ? element : $(element)
+        var normalized = normalize_group_value(value)
+        var options = rebase_group_state.getOptionList()
+        target.empty()
+        options.forEach(function(option) {
+            target.append($('<option>', { value: option.value, text: option.label }))
+        })
+        if (normalized === null) {
+            target.val(rebase_group_state.NONE_SENTINEL)
+        } else if (typeof normalized === 'string') {
+            target.val(normalized)
+        } else {
+            target.val(rebase_group_state.DEFAULT)
+        }
+        if (!target.val()) {
+            target.val(rebase_group_state.DEFAULT)
+        }
+    }
+
+    function update_group_badge(element, value) {
+        var badge = element instanceof jQuery ? element : $(element)
+        if (!badge || badge.length === 0) {
+            return
+        }
+        var normalized = value
+        if (normalized === undefined) {
+            normalized = rebase_group_state.DEFAULT
+        }
+        if (normalized !== null && typeof normalized === 'string') {
+            normalized = rebase_group_state.addGroup(normalized)
+        }
+        badge.removeClass('rebase-group-badge--default rebase-group-badge--custom rebase-group-badge--none')
+        if (normalized === null) {
+            badge.addClass('rebase-group-badge--none')
+        } else if (typeof normalized === 'string' && normalized.toLowerCase() === rebase_group_state.DEFAULT) {
+            badge.addClass('rebase-group-badge--default')
+        } else {
+            badge.addClass('rebase-group-badge--custom')
+        }
+        badge.text(rebase_group_state.labelFor(normalized))
+        badge.removeAttr('hidden')
+    }
+
+    function rebuild_rebase_groups() {
+        rebase_group_state.reset(code_data)
+        if (component_code_list && typeof component_code_list.refresh_groups === 'function') {
+            component_code_list.refresh_groups()
+        }
+    }
+
+    function append_rebase_group_payload(target, value) {
+        var normalized = normalize_group_value(value)
+        if (normalized === null) {
+            target.rebase_group_none = true
+        } else {
+            target.rebase_group = normalized || rebase_group_state.DEFAULT
+        }
+        return target
+    }
+
+    function apply_rebase_group_selection(index, selection) {
+        var key = index.toString()
+        if (!code_data || !Object.prototype.hasOwnProperty.call(code_data, key)) {
+            return
+        }
+        var previousValue = code_data[key].rebase_group
+        var previousNormalized = normalize_group_value(previousValue)
+        var resolved
+        if (selection === rebase_group_state.NONE_SENTINEL) {
+            resolved = null
+        } else if (!selection) {
+            resolved = rebase_group_state.DEFAULT
+        } else {
+            resolved = rebase_group_state.addGroup(selection)
+        }
+        if (previousNormalized === resolved) {
+            return
+        }
+        code_data[key].rebase_group = resolved
+        rebuild_rebase_groups()
+        if (typeof codelist.on_rebase_group_updated === 'function') {
+            codelist.on_rebase_group_updated(key, resolved)
+        }
+        var payload = append_rebase_group_payload({ 'command': 'CODELIST_REBASE_GROUP', 'index': key }, resolved)
+        $.send('/codelist', payload, on_codelist_status)
+    }
+
+    function refresh_group_component(component) {
+        if (!component) {
+            return
+        }
+        if (typeof component.refresh_group_options === 'function') {
+            component.refresh_group_options(component)
+        }
+        if (component.children && component.children.length) {
+            component.children.forEach((child) => {
+                if (Array.isArray(child)) {
+                    child.forEach(refresh_group_component)
+                } else {
+                    refresh_group_component(child)
+                }
+            })
+        }
+    }
+
+    var component_rebase_group_dialog = {
+        'id': 'rebase_group_create_dialog',
+        'obj': undefined,
+        'index': null,
+        'select': null,
+        'previousValue': null,
+        'setup': (data) => {
+            component_rebase_group_dialog.index = data.index.toString()
+            component_rebase_group_dialog.select = $(data.select)
+            component_rebase_group_dialog.previousValue = data.previousValue
+            var suggestion = rebase_group_state.nextSuggestion()
+            var input = component_rebase_group_dialog.obj.find('#rebase_group_name_input')
+            input.val(suggestion)
+            component_rebase_group_dialog.validate()
+            setTimeout(() => {
+                if (input[0]) {
+                    input[0].focus()
+                    input[0].setSelectionRange(0, input.val().length)
+                }
+            }, 0)
+        },
+        'create': (data) => {
+            if (component_rebase_group_dialog.obj === undefined) {
+                ons.createElement('rebase_group_create', { append: true })
+                .then(function(dialog) {
+                    component_rebase_group_dialog.obj = $(dialog)
+                    component_rebase_group_dialog.obj.find('ons-alert-dialog-button[name="cancel_button"]').on('click', component_rebase_group_dialog.on_cancel)
+                    component_rebase_group_dialog.obj.find('ons-alert-dialog-button[name="save_button"]').on('click', component_rebase_group_dialog.on_save)
+                    component_rebase_group_dialog.obj.find('#rebase_group_name_input').on('input', component_rebase_group_dialog.validate)
+                    component_rebase_group_dialog.obj.find('#rebase_group_name_input').on('keydown', function(e) {
+                        if (e.key === 'Enter' || e.keyCode === 13) {
+                            component_rebase_group_dialog.on_save()
+                        }
+                    })
+                    component_rebase_group_dialog.setup(data)
+                    dialog.show()
+                });
+            } else {
+                component_rebase_group_dialog.setup(data)
+                component_rebase_group_dialog.obj[0].show()
+            }
+        },
+        'validate': () => {
+            var btn = component_rebase_group_dialog.obj.find('ons-alert-dialog-button[name="save_button"]')
+            var value = component_rebase_group_dialog.obj.find('#rebase_group_name_input').val().trim()
+            if (value.length > 0) {
+                btn.removeAttr('disabled')
+            } else {
+                btn.attr('disabled', 'disabled')
+            }
+        },
+        'on_cancel': () => {
+            if (component_rebase_group_dialog.select) {
+                render_rebase_group_options(component_rebase_group_dialog.select, component_rebase_group_dialog.previousValue)
+            }
+            component_rebase_group_dialog.obj[0].hide()
+        },
+        'on_save': () => {
+            var input = component_rebase_group_dialog.obj.find('#rebase_group_name_input')
+            var name = input.val().trim()
+            if (name.length === 0) {
+                component_rebase_group_dialog.validate()
+                return
+            }
+            if (name.toLowerCase() === 'none') {
+                ons.notification.toast('Group name cannot be "None".', { timeout: 2000, animation: 'fall' })
+                return
+            }
+            var canonical = rebase_group_state.canonical(name)
+            if (!canonical) {
+                canonical = rebase_group_state.addGroup(name)
+            }
+            component_rebase_group_dialog.obj[0].hide()
+            apply_rebase_group_selection(component_rebase_group_dialog.index, canonical)
+        }
+    }
 
     var component_list = [component_codelist_file, component_codelist_save, component_codelist_download, component_codelist_upload, component_codelist_delete, component_code_list]
 

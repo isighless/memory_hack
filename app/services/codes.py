@@ -28,6 +28,7 @@ ctypes_buffer_t = Union[ctypes._SimpleCData, ctypes.Array, ctypes.Structure, cty
 class CodeList(MemoryHandler):
     directory = codes_directory
     _FILE_VERSION = __version__
+    _DEFAULT_REBASE_GROUP = "default"
     def __init__(self):
         super().__init__('codelist')
         self.handle_map = {
@@ -46,6 +47,7 @@ class CodeList(MemoryHandler):
             "CODELIST_AOB_SELECT": self.handle_aob_base_select,
             "CODELIST_UPLOAD": self.handle_upload,
             "CODELIST_REBASE_CODE": self.handle_rebase,
+            "CODELIST_REBASE_GROUP": self.handle_rebase_group,
         }
         self.update_thread: Thread = None
         self.update_event: Event = None
@@ -72,6 +74,60 @@ class CodeList(MemoryHandler):
 
         if not self.directory.exists():
             self.directory.mkdir(parents=True, exist_ok=True)
+
+    def _normalize_rebase_group(self, code: dict):
+        if code is None:
+            return CodeList._DEFAULT_REBASE_GROUP
+        group = code.get('rebase_group', CodeList._DEFAULT_REBASE_GROUP)
+        if group is None:
+            code['rebase_group'] = None
+            return None
+        if isinstance(group, str):
+            normalized = group.strip()
+            if not normalized:
+                normalized = CodeList._DEFAULT_REBASE_GROUP
+            elif normalized.casefold() == CodeList._DEFAULT_REBASE_GROUP:
+                normalized = CodeList._DEFAULT_REBASE_GROUP
+            code['rebase_group'] = normalized
+            return normalized
+        code['rebase_group'] = CodeList._DEFAULT_REBASE_GROUP
+        return CodeList._DEFAULT_REBASE_GROUP
+
+    def _parse_rebase_group_payload(self, media: dict):
+        provided = False
+        if not media:
+            return CodeList._DEFAULT_REBASE_GROUP, provided
+        none_flag = media.get('rebase_group_none')
+        if none_flag is not None:
+            provided = True
+            if isinstance(none_flag, str):
+                none_flag_bool = none_flag.strip().lower() in ("1", "true", "yes", "on")
+            else:
+                none_flag_bool = bool(none_flag)
+            if none_flag_bool:
+                return None, True
+        if 'rebase_group' in media:
+            provided = True
+            raw_group = media.get('rebase_group')
+            if raw_group is None:
+                return None, True
+            if isinstance(raw_group, str):
+                trimmed = raw_group.strip()
+                if not trimmed:
+                    return CodeList._DEFAULT_REBASE_GROUP, True
+                if trimmed.casefold() in {"__none__", "none"}:
+                    return None, True
+                return trimmed, True
+            return CodeList._DEFAULT_REBASE_GROUP, True
+        return CodeList._DEFAULT_REBASE_GROUP, provided
+
+    def _should_share_rebase(self, base_group, candidate: dict) -> bool:
+        if base_group is None:
+            return False
+        candidate_group = self._normalize_rebase_group(candidate)
+        if candidate_group is None:
+            return False
+        return candidate_group.casefold() == base_group.casefold()
 
     def kill(self):
         self.reset()
@@ -199,6 +255,7 @@ class CodeList(MemoryHandler):
 
     def handle_add_code(self, req: Request, resp: Response):
         tp = req.media['type']
+        group_value, group_provided = self._parse_rebase_group_payload(req.media)
         if not self.code_data:
             self.code_data = {}
         if tp == 'aob_from_address':
@@ -240,6 +297,8 @@ class CodeList(MemoryHandler):
                         del cd['Offsets']
                     if 'Value' in cd:
                         del cd['Value']
+                    if group_provided:
+                        cd['rebase_group'] = group_value
                 elif tp == 'pointer':
                     cd['Source'] = 'pointer'
                     cd['Address'] = req.media['address']
@@ -251,6 +310,8 @@ class CodeList(MemoryHandler):
                         del cd['Offset']
                     if 'Value' in cd:
                         del cd['Value']
+                    if group_provided:
+                        cd['rebase_group'] = group_value
                 else:
                     cd['Source'] = 'aob'
                     cd['AOB'] = req.media['aob'].upper()
@@ -261,6 +322,8 @@ class CodeList(MemoryHandler):
                         del cd['Value']
                     if 'Offsets' in cd:
                         del cd['Offsets']
+                    if group_provided:
+                        cd['rebase_group'] = group_value
                 self.process_add(cd)
             else:
                 index = self.component_index
@@ -271,7 +334,8 @@ class CodeList(MemoryHandler):
                         "Signed": False,
                         "Freeze": False,
                         "Source": "address",
-                        "Address": req.media['address']
+                        "Address": req.media['address'],
+                        "rebase_group": group_value
                     }
                 elif tp == 'pointer':
                     self.code_data[index] = {
@@ -281,7 +345,8 @@ class CodeList(MemoryHandler):
                         "Freeze": False,
                         "Source": "pointer",
                         "Address": req.media['address'],
-                        "Offsets": req.media['offsets'].upper()
+                        "Offsets": req.media['offsets'].upper(),
+                        "rebase_group": group_value
                     }
                 else:
                     self.code_data[index] = {
@@ -291,7 +356,8 @@ class CodeList(MemoryHandler):
                         "Freeze": False,
                         "Source": "aob",
                         "AOB": req.media['aob'].upper(),
-                        "Offset": req.media['offset'].upper()
+                        "Offset": req.media['offset'].upper(),
+                        "rebase_group": group_value
                     }
                 self.process_add(self.code_data[index])
         if len(self.code_data) == 1:
@@ -315,12 +381,34 @@ class CodeList(MemoryHandler):
 
         resp.media['repeat'] = 400
 
+    def handle_rebase_group(self, req: Request, resp: Response):
+        if not self.code_data:
+            return
+        if 'index' not in req.media:
+            raise CodelistException("Can't set rebase group without an index")
+        index = int(req.media['index'])
+        if index not in self.code_data:
+            raise CodelistException("Can't set rebase group for a missing code")
+        group_value, provided = self._parse_rebase_group_payload(req.media)
+        if not provided:
+            return
+        with self.update_lock:
+            code = self.code_data[index]
+            code['rebase_group'] = group_value
+            normalized = self._normalize_rebase_group(code)
+        resp.media['index'] = index
+        resp.media['rebase_group'] = normalized
+
     def handle_rebase(self, req: Request, resp: Response):
         tp = req.media['type']
+        group_value, group_provided = self._parse_rebase_group_payload(req.media)
         with self.update_lock:
             if 'index' in req.media:
                 index = int(req.media['index'])
                 cd = self.code_data[index]
+                if group_provided:
+                    cd['rebase_group'] = group_value
+                    self._normalize_rebase_group(cd)
                 if tp != cd['Source']:
                     return
                 if index in self.result_map:
@@ -335,7 +423,10 @@ class CodeList(MemoryHandler):
                     cd['Address'] = req.media['address']
                     cd['Freeze'] = False
                     edit_list = [(index, cd)]
+                    rebase_group = self._normalize_rebase_group(cd)
                     for (_index, current_code) in [(_index, x) for (_index, x) in self.code_data.items() if x['Source'] == tp and x != cd]:
+                        if not self._should_share_rebase(rebase_group, current_code):
+                            continue
                         current_code['Address'] = '{:X}'.format(int(current_code['Address'], 16) + diff)
                         current_code['Freeze'] = False
                         if _index in self.freeze_map:
@@ -353,7 +444,10 @@ class CodeList(MemoryHandler):
                     cd['Offsets'] = req.media['offsets'].upper()
                     cd['Freeze'] = False
                     edit_list = [(index, cd)]
+                    rebase_group = self._normalize_rebase_group(cd)
                     for (_index, current_code) in [(_index, x) for (_index, x) in self.code_data.items() if x['Source'] == tp and x != cd and x['Address'] == old_address]:
+                        if not self._should_share_rebase(rebase_group, current_code):
+                            continue
                         if [int(x, 16) for x in current_code['Offsets'].split(',')[0:-1]] != [int(x, 16) for x in req.media['offsets'].split(',')[0:-1]]:
                             continue
                         current_code['Address'] = req.media['address']
@@ -377,7 +471,10 @@ class CodeList(MemoryHandler):
                     cd['Offset'] = req.media['offset'].upper()
                     cd['Freeze'] = False
                     edit_list = [(index, cd)]
+                    rebase_group = self._normalize_rebase_group(cd)
                     for (_index, current_code) in [(_index, x) for (_index, x) in self.code_data.items() if x['Source'] == tp and x != cd and x['AOB'] == old_aob]:
+                        if not self._should_share_rebase(rebase_group, current_code):
+                            continue
                         current_code['AOB'] = req.media['aob'].upper()
                         current_code['Offset'] = '{:X}'.format(int(current_code['Offset'], 16) + diff)
                         current_code['Freeze'] = False
@@ -503,6 +600,7 @@ class CodeList(MemoryHandler):
                     self.file_version = CodeList._FILE_VERSION
                 for i in range(0, len(codes)):
                     v = codes[i]
+                    self._normalize_rebase_group(v)
                     v['Value'] = {'Actual': None, 'Display': "??"}
                     v['Freeze'] = False
                     self.code_data[i] = v
@@ -580,6 +678,7 @@ class CodeList(MemoryHandler):
 
 
     def process_add(self, code):
+        self._normalize_rebase_group(code)
         if code['Source'] == 'aob':
             if code['AOB'] not in self.aob_map:
                 self.aob_map[code['AOB']] = AOB('', code['AOB'])
