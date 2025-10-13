@@ -431,7 +431,7 @@ class CodeList(MemoryHandler):
 
     def handle_download(self, req: Request, resp: Response):
         name = req.params['name']
-        resp.downloadable_as = name+'.codes'
+        resp.downloadable_as = name+'.json'
         resp.content_type = 'application/octet-stream'
         resp.stream = self.get_stream()
         resp.status = 200
