@@ -46,6 +46,27 @@
       </ons-col>
     </ons-row>
 
+    <ons-row id="row_codelist_sort" style="padding-top: 10px; padding-bottom: 10px;">
+      <ons-col align="center" width="18%" class="col ons-col-inner">
+        Sort by:
+      </ons-col>
+      <ons-col align="center" width="62%" class="col ons-col-inner">
+        <select id="codelist_sort_by" class="select-input select-input--material" style="width:inherit;">
+          <option value="address_asc" selected>Address - ascending</option>
+          <option value="address_desc">Address - descending</option>
+          <option value="name_asc">Name - ascending</option>
+          <option value="name_desc">Name - descending</option>
+          <option value="type_asc">Type - ascending</option>
+          <option value="type_desc">Type - descending</option>
+          <option value="value_asc">Value - ascending</option>
+          <option value="value_desc">Value - descending</option>
+        </select>
+      </ons-col>
+      <ons-col align="center" width="20%" class="col ons-col-inner">
+        <ons-button id="codelist_sort_button" onclick="codelist.on_sort_clicked(this)">Sort</ons-button>
+      </ons-col>
+    </ons-row>
+
     <ons-list id="code_list" style="padding-bottom:200px;">
     </ons-list>
   </div>
@@ -59,4 +80,3 @@
 
 
 </ons-page>
-

@@ -54,6 +54,12 @@
         }
     }
 
+    codelist.on_sort_clicked = function(ele) {
+        var sel = $('#codelist_sort_by').val();
+        if (!sel) sel = 'address_asc';
+        $.send('/codelist', { 'command': 'CODELIST_SORT', 'sort': sel }, on_codelist_status);
+    }
+
     codelist.on_tab_set = function(tab) {
         if (tab !== 'codelist') {
             if (codelist.updater !== null) {

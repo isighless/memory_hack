@@ -46,6 +46,7 @@ class CodeList(MemoryHandler):
             "CODELIST_AOB_SELECT": self.handle_aob_base_select,
             "CODELIST_UPLOAD": self.handle_upload,
             "CODELIST_REBASE_CODE": self.handle_rebase,
+            "CODELIST_SORT": self.handle_sort,
         }
         self.update_thread: Thread = None
         self.update_event: Event = None
@@ -436,6 +437,123 @@ class CodeList(MemoryHandler):
         resp.stream = self.get_stream()
         resp.status = 200
 
+    def _default_filename(self) -> str:
+        base = Path(self.get_process_name()).stem or 'codes'
+        existing = [item.casefold() for item in self.get_code_files()]
+        idx = 0
+        candidate = base
+        while candidate.casefold() in existing:
+            idx += 1
+            candidate = f"{base}-{idx:03d}"
+        return candidate
+
+    def handle_sort(self, req: Request, resp: Response):
+        if not self.code_data or len(self.code_data) == 0:
+            resp.media['file_data'] = self.code_data
+            return
+        sort_kind = req.media.get('sort', 'address_asc')
+        ascending = sort_kind.endswith('_asc')
+        key_name = sort_kind.split('_')[0]
+
+        # generate a stable list of (old_index, code)
+        items = list(self.code_data.items())
+
+        def key_address(itm):
+            idx, code = itm
+            # Prefer resolved address if available
+            try:
+                if 'Resolved' in code and isinstance(code['Resolved'], int):
+                    return code['Resolved']
+            except Exception:
+                pass
+            if code['Source'] == 'aob':
+                res = self.result_map.get(idx, {})
+                addrs = res.get('Addresses', {}).get('Actual', []) if isinstance(res, dict) else []
+                if addrs:
+                    return addrs[0]
+                try:
+                    return int(code.get('Offset', '0'), 16)
+                except Exception:
+                    return 0
+            elif code['Source'] == 'pointer':
+                try:
+                    return int(code.get('Address', '0'), 16)
+                except Exception:
+                    return 0
+            else:  # address
+                try:
+                    return int(code.get('Address', '0'), 16)
+                except Exception:
+                    return 0
+
+        def key_name_fn(itm):
+            _, code = itm
+            return (code.get('Name') or '').casefold()
+
+        def key_type_fn(itm):
+            _, code = itm
+            return code.get('Type') or ''
+
+        def key_value_fn(itm):
+            idx, _ = itm
+            res = self.result_map.get(idx)
+            if not res:
+                return float('-inf')
+            val = res.get('Value', {}).get('Actual')
+            if val is None:
+                return float('-inf')
+            try:
+                return float(val)
+            except Exception:
+                return float('-inf')
+
+        key_fn = key_address
+        if key_name == 'name':
+            key_fn = key_name_fn
+        elif key_name == 'type':
+            key_fn = key_type_fn
+        elif key_name == 'value':
+            key_fn = key_value_fn
+
+        items_sorted = sorted(items, key=key_fn, reverse=not ascending)
+
+        # Remap indices to preserve freeze/result associations
+        index_map = {old_idx: new_idx for new_idx, (old_idx, _) in enumerate(items_sorted)}
+        new_code_data = {}
+        for new_idx, (old_idx, code) in enumerate(items_sorted):
+            new_code_data[new_idx] = code
+        # Remap freeze and results
+        new_freeze_map = {}
+        for old_idx, entry in list(self.freeze_map.items()):
+            if old_idx in index_map:
+                new_freeze_map[index_map[old_idx]] = entry
+        new_result_map = {}
+        for old_idx, entry in list(self.result_map.items()):
+            if old_idx in index_map:
+                new_result_map[index_map[old_idx]] = entry
+
+        self.code_data = new_code_data
+        self.freeze_map = new_freeze_map
+        self.result_map = new_result_map
+        self.component_index = max(list(self.code_data.keys()))+1 if self.code_data else 0
+
+        # Ensure we have a filename; if none, create a default
+        filename = self.loaded_file if self.loaded_file != '_null' else self._default_filename()
+        # Save to file in current order
+        try:
+            dt = self.dump_codelist()
+            pt = self.directory.joinpath(filename + '.codes')
+            pt.write_text(dt)
+        except Exception:
+            raise CodelistException('Could not save sorted codes.')
+        if filename != self.loaded_file:
+            self.loaded_file = filename
+            resp.media['file'] = self.loaded_file
+            resp.media['files'] = self.get_code_files()
+
+        # Return updated list for client to rebuild
+        resp.media['file_data'] = self.code_data
+
     def handle_upload(self, req: Request, resp: Response):
         name: str = req.media['name'].strip()
         data = base64.b64decode(req.media['data'].split(',')[1])
@@ -805,4 +923,3 @@ class CodeList(MemoryHandler):
                     for aob, bases in base_list.items():
                         aob.set_bases(bases)
             self.aob_event.wait(15)
-
