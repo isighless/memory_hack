@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import logging
 import falcon
 
 from falcon_multipart.middleware import MultipartMiddleware
@@ -13,6 +14,9 @@ class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
         pass
 
 if __name__ == '__main__':
+    # Configure logging for console output
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    logger = logging.getLogger(__name__)
     pt = Path(__file__).parent.joinpath('app')
     os.chdir(pt)
     app = falcon.App(middleware=[MultipartMiddleware()])
@@ -27,7 +31,12 @@ if __name__ == '__main__':
 
     try:
         with make_server('', 5000, app, handler_class=NoLoggingWSGIRequestHandler) as httpd:
-            print('Serving on port 5000...')
+            logger.info('Serving on port 5000...')
             httpd.serve_forever()
     except KeyboardInterrupt:
+        logger.info('KeyboardInterrupt received. Shutting down and cleaning up services...')
+        DataStore().kill()
+    except Exception:
+        # Catch-all to provide debug information for unexpected exceptions
+        logger.exception('Unhandled exception in Memory Hack server loop')
         DataStore().kill()
