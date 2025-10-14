@@ -50,6 +50,8 @@ class StructureSearch(BaseScript):
         self.put_data("SCAN_CANDIDATES", [])
         self.put_data("SCAN_LAST_DONE", -1)
         self.put_data("SCAN_STALL_COUNT", 0)
+        # Allow selecting/copying header text
+        self.ui.add_style(".selectable-text { user-select: text; -webkit-user-select: text; -ms-user-select: text; }")
 
     def get_script_information(self):
         return {
@@ -180,12 +182,12 @@ class StructureSearch(BaseScript):
 
         # Header
         header = '<ons-row>' \
-                 '<ons-col class="col ons-col-inner" width="10%"><b>Offset</b></ons-col>' \
-                 '<ons-col class="col ons-col-inner" width="30%"><b>Name</b></ons-col>' \
-                 '<ons-col class="col ons-col-inner" width="15%"><b>Type</b></ons-col>' \
-                 '<ons-col class="col ons-col-inner" width="25%"><b>Known Value</b></ons-col>' \
-                 '<ons-col class="col ons-col-inner" width="20%"><b>Result Value</b></ons-col>' \
-                 '</ons-row>'
+                   '<ons-col class="col ons-col-inner" width="10%"><b>Offset</b></ons-col>' \
+                   '<ons-col class="col ons-col-inner" width="30%"><b>Name</b></ons-col>' \
+                   '<ons-col class="col ons-col-inner" width="15%"><b>Type</b></ons-col>' \
+                   '<ons-col class="col ons-col-inner" width="25%"><b>Known Value</b></ons-col>' \
+                   '<ons-col class="col ons-col-inner" width="20%"><span id="RESULTS_HEADER_ADDR" class="selectable-text">????????</span></ons-col>' \
+                   '</ons-row>'
         body = ''
         for idx, code in enumerate(codes):
             name = code.get('Name', f'Code {idx}')
@@ -402,10 +404,9 @@ class StructureSearch(BaseScript):
             cmd_js = "$.send('/codelist', {} , function(r){{}});".format(json.dumps(cmd))
             self.ui.js(cmd_js)
 
-        # Notify and switch to Codes tab to trigger UI refresh
+        # Notify and switch to Codes tab (do not reload the file again or changes will be lost)
         self.ui.js("ons.notification.toast('Applied structure addresses to Codes.', { timeout: 2000 });")
         self.ui.js("var tb=document.querySelector('ons-tabbar'); if(tb){tb.setActiveTab(0);} ")
-        self.ui.js("setTimeout(function(){ var sel=document.getElementById('codelist_file_selection'); if(sel){ sel.value=" + json.dumps(filename) + "; var ev=new Event('change'); sel.dispatchEvent(ev);} }, 300);")
 
     def _on_use_top(self, name: str, ele_id: str, data):
         rows = self.get_data('RESULT_ROWS') or []
@@ -477,6 +478,8 @@ class StructureSearch(BaseScript):
             for i in range(len(codes)):
                 input_id = 'GROUP_INPUTS_RESULT_{}'.format(i)
                 self.ui.js("$('#'+{}).val('');".format(json.dumps(input_id)))
+            # Reset result header address
+            self.ui.js("$('#RESULTS_HEADER_ADDR').text('????????');")
             return
         row = rows[index]
         # Update header label and nav button states
@@ -489,6 +492,14 @@ class StructureSearch(BaseScript):
             self.ui.get_element('BTN_RESULT_NEXT').disable()
         else:
             self.ui.get_element('BTN_RESULT_NEXT').enable()
+        # Update result column header to first entry address
+        try:
+            first_addr = row['addresses'][0]
+            header_txt = '????????' if first_addr is None or int(first_addr) <= 0 else '{:X}'.format(int(first_addr))
+        except Exception:
+            header_txt = '????????'
+        self.ui.js("$('#RESULTS_HEADER_ADDR').text(" + json.dumps(header_txt) + ");")
+
         # Fill per-code result value inputs
         for i, code in enumerate(codes):
             try:
