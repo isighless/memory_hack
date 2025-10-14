@@ -32,7 +32,14 @@ class Group(Element):
             item.perform_process()
 
     def handle_interaction(self, _id: str, data):
-        element_name = self.id_map[_id].get_id()
+        # For dynamically generated children (built via inner HTML), the original
+        # element id may not exist in id_map. Fall back to this group's id.
+        element_name = self.get_id()
+        if _id in self.id_map:
+            try:
+                element_name = self.id_map[_id].get_id()
+            except Exception:
+                element_name = self.get_id()
         res = self.on_interaction(element_name, _id, data)
         super().handle_interaction(_id, data)
         return res

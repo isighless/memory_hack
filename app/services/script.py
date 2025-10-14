@@ -115,8 +115,31 @@ class Script(MemoryHandler):
                 resp.media['repeat'] = 200
 
     def handle_script_interact(self, req: Request, resp: Response):
-        _id = req.media['id']
-        data = req.media['data']
+        _id = req.media.get('id')
+        # Support JSON and form-encoded nested keys like data[values][]
+        payload = req.media if isinstance(req.media, dict) else {}
+        data = payload.get('data')
+        if data is None:
+            tmp = {}
+            try:
+                for k, v in payload.items():
+                    if not isinstance(k, str):
+                        continue
+                    if k.startswith('data['):
+                        inner = k[5:]
+                        if inner.endswith('][]'):
+                            name = inner[:-3]
+                            tmp.setdefault(name, [])
+                            tmp[name].append(v)
+                        elif inner.endswith(']'):
+                            name = inner[:-1]
+                            tmp[name] = v
+                if tmp:
+                    data = tmp
+            except Exception:
+                data = None
+        if data is None:
+            data = {}
         if _id == '__copy':
             self.script_clipboard = data
         elif _id == '__copy_clear':
@@ -323,7 +346,6 @@ class Script(MemoryHandler):
             except Exception as e:
                 logging.error(str(e))
                 self.error = Script.parse_error(self.filename, traceback.format_exc(limit=-1))
-
 
 
 
