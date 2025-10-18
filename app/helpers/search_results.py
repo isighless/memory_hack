@@ -50,7 +50,17 @@ class SearchResults:
         return connection.execute('''SELECT address, value from "{}"'''.format(self.table_stack[index]))
 
     def delete_database(self):
-        self.db_path.unlink(missing_ok=True)
+        # Prefer in-place cleanup to avoid Windows unlink race with open handles
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            # Fallback: drop existing tables within the existing DB file
+            try:
+                with self.db() as conn:
+                    self.clear_results(conn)
+            except Exception:
+                # Last resort: leave DB as-is; caller will recreate needed table
+                pass
         self.table_stack = [self.table]
         self.table_count = 1
 
@@ -88,4 +98,3 @@ class SearchResults:
     def get_store_size(self, connection: sqlite3.Connection):
         sql = '''SELECT value FROM "{}" LIMIT 1'''.format(self.table_stack[0])
         return len(connection.execute(sql).fetchone()[0])
-

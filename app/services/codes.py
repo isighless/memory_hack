@@ -1,4 +1,5 @@
 import base64
+import logging
 import copy
 import ctypes
 import json
@@ -23,6 +24,8 @@ from app.script_common.utilities import ScriptUtilities
 from app.version import __version__
 
 ctypes_buffer_t = Union[ctypes._SimpleCData, ctypes.Array, ctypes.Structure, ctypes.Union]
+
+logger = logging.getLogger(__name__)
 
 
 class CodeList(MemoryHandler):
@@ -914,12 +917,16 @@ class CodeList(MemoryHandler):
         self.aob_searcher.create_searcher()
         base_list = {}
         while not self.aob_event.is_set():
-            base_list.clear()
-            if self.aob_map:
-                for aob in self.aob_map.values():
-                    bases = self.aob_searcher.search_aob_all_memory(aob)
-                    base_list[aob] = bases
-                with self.update_lock:
-                    for aob, bases in base_list.items():
-                        aob.set_bases(bases)
-            self.aob_event.wait(15)
+            try:
+                base_list.clear()
+                if self.aob_map:
+                    for aob in self.aob_map.values():
+                        bases = self.aob_searcher.search_aob_all_memory(aob)
+                        base_list[aob] = bases
+                    with self.update_lock:
+                        for aob, bases in base_list.items():
+                            aob.set_bases(bases)
+            except Exception:
+                logger.exception("AOB background thread encountered an error during scan")
+            finally:
+                self.aob_event.wait(15)

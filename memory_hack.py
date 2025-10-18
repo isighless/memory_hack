@@ -7,6 +7,7 @@ import falcon
 from falcon_multipart.middleware import MultipartMiddleware
 import importlib
 import sys
+import threading
 from wsgiref.simple_server import make_server, WSGIRequestHandler
 
 class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
@@ -26,6 +27,23 @@ if __name__ == '__main__':
     logging.getLogger().addHandler(file_handler)
 
     logger = logging.getLogger(__name__)
+
+    # Route unhandled exceptions to our logger so they appear in the server logs
+    def _sys_excepthook(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            logger.info('KeyboardInterrupt received (sys).')
+            return
+        logger.exception('Unhandled exception', exc_info=(exc_type, exc_value, exc_traceback))
+
+    def _thread_excepthook(args: threading.ExceptHookArgs):
+        if issubclass(args.exc_type, KeyboardInterrupt):
+            logger.info('KeyboardInterrupt received in thread %s', args.thread.name)
+            return
+        logger.exception('Unhandled exception in thread %s', args.thread.name,
+                         exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+    sys.excepthook = _sys_excepthook
+    threading.excepthook = _thread_excepthook
     pt = Path(__file__).parent.joinpath('app')
     os.chdir(pt)
     # Outer loop to allow controlled restarts (with optional module reloads)

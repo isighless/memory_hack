@@ -80,12 +80,18 @@ class Searcher:
             if self.progress:
                 self.progress.reset()
                 self.progress.add_constraint(0, self.total_size, 1.0)
-            self.results.delete_database()
+            # Avoid unlink races; clear tables in-place instead
+            self.results.table_stack = [self.results.table]
+            self.results.table_count = 1
             with self.results.db() as conn:
+                self.results.clear_results(conn)
                 self.results.create_result_table(conn)
         elif search_type == self.SEARCH_TYPE_VALUE or search_type == self.SEARCH_TYPE_OPERATION:
-            self.results.delete_database()
+            # Avoid unlink races; clear tables in-place instead
+            self.results.table_stack = [self.results.table]
+            self.results.table_count = 1
             with self.results.db() as conn:
+                self.results.clear_results(conn)
                 self.results.create_result_table(conn)
             if self.progress:
                 self.progress.add_constraint(0, self.total_size, 1.0)

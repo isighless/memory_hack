@@ -1,5 +1,6 @@
 import ctypes
 import multiprocessing
+import logging
 import os
 import platform
 import traceback
@@ -17,7 +18,17 @@ from app.search.operations import Operation, MemoryOperation, EqualInt, EqualFlo
 from app.search.searcher import Searcher
 from app.search.value import Value, IntValue
 
+# Use multiprocessing logger for worker diagnostics to stderr,
+# and standard logger for server log integration in the parent process.
 logger = multiprocessing.log_to_stderr()
+# Suppress noisy INFO logs like "child process calling self.run()"
+try:
+    logger.setLevel(logging.WARNING)
+    multiprocessing.get_logger().setLevel(logging.WARNING)
+except Exception:
+    # Be tolerant if the logger isn't initialized in this context
+    pass
+log = logging.getLogger(__name__)
 #logger.setLevel(multiprocess.SUBDEBUG)
 
 
@@ -247,7 +258,7 @@ class SearcherMulti(Searcher):
                         if self.progress:
                             self.progress.increment(res['count'])
                         if 'error' in res:
-                            logger.error("{} - {}".format(res['id'], res['error']))
+                            log.error("{} - {}".format(res['id'], res['error']))
                         else:
                             self.results.add_results(conn, res['results'])
                 except BreakException:
@@ -301,7 +312,7 @@ class SearcherMulti(Searcher):
                         if self.progress:
                             self.progress.increment(res['count'])
                         if 'error' in res:
-                            logger.error("{} - {}".format(res['id'], res['error']))
+                            log.error("{} - {}".format(res['id'], res['error']))
                         else:
                             self.results.add_results(conn, res['results'])
                 except BreakException:
@@ -360,7 +371,7 @@ class SearcherMulti(Searcher):
                         if self.progress:
                             self.progress.increment(res['count'])
                         if 'error' in res:
-                            logger.error("{} - {}".format(res['id'], res['error']))
+                            log.error("{} - {}".format(res['id'], res['error']))
                         else:
                             self.results.add_results(conn, res['results'])
                 except BreakException:
@@ -453,15 +464,13 @@ class SearcherMulti(Searcher):
                         if self.progress:
                             self.progress.increment(res['count'])
                         if 'error' in res:
-                            logger.error("{} - {}".format(res['id'], res['error']))
+                            log.error("{} - {}".format(res['id'], res['error']))
                         else:
                             self.results.add_results(conn, res['results'])
                 except BreakException:
                     pool.terminate()
                     pool.join()
                     raise
-
-
 
 
 
