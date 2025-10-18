@@ -72,11 +72,11 @@ class SearchBuffer:
 
     @staticmethod
     def create(buffer, start_offset, search_value: Value, result_callback: callable=None, _results: list=None, result_write_threshold:int =10000, aligned:bool = True):
-        if type(search_value) == IntValue:
+        if isinstance(search_value, IntValue):
             return IntSearchBuffer(buffer, start_offset, result_callback, search_value.store_size, _results, result_write_threshold, aligned)
-        elif type(search_value) == FloatValue:
+        elif isinstance(search_value, FloatValue):
             return FloatSearchBuffer(buffer, start_offset, result_callback, _results, result_write_threshold, aligned)
-        elif type(search_value) == AOB:
+        elif isinstance(search_value, AOB):
             return AOBSearchBuffer(buffer, start_offset, result_callback, search_value.get_store_size(), _results, result_write_threshold)
         raise BufferException('could not create buffer of type ' + str(search_value))
 
@@ -248,5 +248,4 @@ class AOBSearchBuffer(SearchBuffer):
 
     def _index_to_address(self, index):
         return index
-
 

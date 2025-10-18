@@ -726,7 +726,9 @@ class CodeList(MemoryHandler):
                 aob.set_bases(bases)
             #if not aob.is_found() and aob.get_last_searched() > random.randint(8, 12):
             else:
-                bases = self.utilities.search_aob_all_memory(aob)
+                # Prefer single-process AOB scan in updater thread to avoid
+                # multiprocessing pickling issues during in-process restarts
+                bases = self.utilities.search_aob_all_memory(aob, single_process=True)
                 aob.set_bases(bases)
     def _update_process(self):
         while not self.update_event.is_set():

@@ -46,26 +46,16 @@ if __name__ == '__main__':
     threading.excepthook = _thread_excepthook
     pt = Path(__file__).parent.joinpath('app')
     os.chdir(pt)
-    # Outer loop to allow controlled restarts (with optional module reloads)
+    # Outer loop to allow controlled restarts without relaunching the process
     while True:
-        # Soft-reload app.* modules so updated code is picked up without full exit
+        # Fully unload app.* modules to avoid identity mismatches across restarts
+        # (important for multiprocessing pickling and type checks)
         try:
             importlib.invalidate_caches()
-            # Ensure no stale user script modules linger across restarts
-            for name in [n for n in list(sys.modules.keys()) if n.startswith('app.user_scripts')]:
+            for name in [n for n in list(sys.modules.keys()) if n == 'app' or n.startswith('app.')]:
                 sys.modules.pop(name, None)
-            to_reload = [
-                name for name in list(sys.modules.keys())
-                if name.startswith('app.') and not name.startswith('app.user_scripts')
-            ]
-            # Reload leaves first (longer names first), then parents
-            for name in sorted(to_reload, key=lambda n: (-n.count('.'), -len(n))):
-                try:
-                    importlib.reload(sys.modules[name])
-                except Exception:
-                    logger.exception('Module reload failed for %s', name)
         except Exception:
-            logger.exception('Module reload sweep failed')
+            logger.exception('Module unload sweep failed')
 
         # Import fresh references after reload
         app_module = importlib.import_module('app.main')
