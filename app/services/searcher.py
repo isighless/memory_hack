@@ -135,6 +135,7 @@ class Search(MemoryHandler):
             resp.media['results'] = self.get_updated_addresses()
             resp.media['type'] = self.type
             resp.media['size'] = self.size
+            resp.media['array'] = (self.size == 'array')
             resp.media['value'] = str(self.value.get_printable()) if self.is_value_search() else "0"
             resp.media['count'] = len(self.searcher.results)
             resp.media['repeat'] = 0
@@ -258,13 +259,17 @@ class Search(MemoryHandler):
     def handle_result_update(self, req: Request, resp: Response):
         if not self.update_thread or not self.update_thread.is_alive():
             resp.media['repeat'] = 0
-            resp.media['array'] = False
+            resp.media['array'] = (self.size == 'array')
             resp.media['count'] = 0
             resp.media['results'] = []
         else:
             self.update_thread.add_action('refresh')
             resp.media['results'] = self.get_updated_addresses()
-            resp.media['array'] = isinstance(self.update_thread.parsed_value, ctypes.Array)
+            try:
+                # Use configured search size; parsed_value is a Value, not a ctypes array
+                resp.media['array'] = (self.size == 'array')
+            except Exception:
+                resp.media['array'] = False
             resp.media['count'] = len(self.searcher.results)
             resp.media['repeat'] = 1000
 
@@ -529,5 +534,4 @@ class Search(MemoryHandler):
             elif freeze and address not in self.freeze_map:
                 self.freeze_map[address] = value
             self.lock.release()
-
 

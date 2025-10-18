@@ -1064,7 +1064,7 @@
             }
         },
         'update': (_this) => {},
-        'template': '<input tabIndex="-1" type="text" id="##id##" name="code_address" class="text-input text-input--material text-full r-value" oninput="codelist.aob_value_changed(this)" readonly>',
+        'template': '<textarea tabIndex="-1" id="##id##" name="code_address" class="text-input text-input--material r-value aob-textarea" rows="3" cols="48" wrap="soft" oninput="codelist.aob_value_changed(this)" readonly></textarea>',
         'create': index => {
             var t = {...component_code_aob};
             t.id = component_code_aob.id+index

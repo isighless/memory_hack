@@ -337,34 +337,26 @@ div .input_item{
         </ons-col>
       </ons-row>
       <ons-row style="margin-top:10px;">
-        <ons-col align="center" width="30%" class="col ons-col-inner">
-          Address:
-        </ons-col>
-        <ons-col align="center" width="70%" class="col ons-col-inner">
+        <ons-col width="100%" class="col ons-col-inner">
+          <label class="field-label" for="add_code_address">Address:</label>
           <input type="text" id="add_code_address" name="code_address" class="text-input text-input--material text-full" oninput="codelist.get_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
         </ons-col>
       </ons-row>
       <ons-row style="margin-top:10px;">
-        <ons-col align="center" width="30%" class="col ons-col-inner">
-          AOB:
-        </ons-col>
-        <ons-col align="center" width="70%" class="col ons-col-inner">
-          <input type="text" id="add_code_aob" name="code_address" class="text-input text-input--material text-full" oninput="codelist.get_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
+        <ons-col width="100%" class="col ons-col-inner">
+          <label class="field-label" for="add_code_aob">AOB:</label>
+          <textarea id="add_code_aob" name="code_address" class="text-input text-input--material aob-textarea" rows="3" cols="48" wrap="soft" oninput="codelist.get_dialog().validate()" autocomplete="chrome-off" autocapitalize="off"></textarea>
         </ons-col>
       </ons-row>
-      <ons-row>
-        <ons-col align="center" width="30%" class="col ons-col-inner">
-          Offset:
-        </ons-col>
-        <ons-col align="center" width="40%" class="col ons-col-inner">
+      <ons-row style="margin-top:10px;">
+        <ons-col width="100%" class="col ons-col-inner">
+          <label class="field-label" for="add_code_offset">Offset:</label>
           <input type="text" id="add_code_offset" name="code_address" class="text-input text-input--material text-full" oninput="codelist.get_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
         </ons-col>
       </ons-row>
-      <ons-row>
-        <ons-col align="center" width="30%" class="col ons-col-inner">
-          Offsets:
-        </ons-col>
-        <ons-col align="center" width="40%" class="col ons-col-inner">
+      <ons-row style="margin-top:10px;">
+        <ons-col width="100%" class="col ons-col-inner">
+          <label class="field-label" for="add_code_offsets">Offsets:</label>
           <input type="text" id="add_code_offsets" name="code_address" class="text-input text-input--material text-full" oninput="codelist.get_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
         </ons-col>
       </ons-row>
@@ -388,57 +380,34 @@ div .input_item{
         </p>
       </div>
       <ons-row id="rebase_address" hidden>
-        <ons-row>
-          <ons-col align="center" width="80%" class="col ons-col-inner">
-            New Address
-          </ons-col>
-          <ons-col align="center" width="20%" class="col ons-col-inner">
+        <ons-col width="100%" class="col ons-col-inner">
+          <div class="field-label">
+            <label for="rebase_code_address">New Address</label>
             <ons-button modifier="quiet" id="rebase_code_address_paste_button" onclick="codelist.get_rebase_dialog().on_aob_paste()"><ons-icon icon="md-paste"></ons-icon></ons-button>
-          </ons-col>
-        </ons-row>
-        <ons-row>
-          <ons-col align="center" width="100%" class="col ons-col-inner">
-            <input type="text" id="rebase_code_address" name="code_address" style="display:block; margin: 0 auto" class="text-input text-input--material text-full" oninput="codelist.get_rebase_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
-          </ons-col>
-        </ons-row>
+          </div>
+          <input type="text" id="rebase_code_address" name="code_address" class="text-input text-input--material text-full" oninput="codelist.get_rebase_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
+        </ons-col>
       </ons-row>
       <ons-row id="rebase_pointer" hidden>
-        <ons-row>
-          <ons-col align="center" width="80%" class="col ons-col-inner">
-            New Pointer
-          </ons-col>
-          <ons-col align="center" width="20%" class="col ons-col-inner">
+        <ons-col width="100%" class="col ons-col-inner">
+          <div class="field-label">
+            <label for="rebase_code_pointer">New Pointer</label>
             <ons-button modifier="quiet" id="rebase_code_pointer_paste_button" onclick="codelist.get_rebase_dialog().on_aob_paste()"><ons-icon icon="md-paste"></ons-icon></ons-button>
-          </ons-col>
-        </ons-row>
-        <ons-row>
-          <ons-col align="center" width="100%" class="col ons-col-inner">
-            <input type="text" id="rebase_code_pointer" name="code_address" style="display:block; margin: 0 auto" class="text-input text-input--material text-full" oninput="codelist.get_rebase_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
-          </ons-col>
-        </ons-row>
-        <ons-row>
-          <ons-col align="center" width="30%" class="col ons-col-inner">
-            Offsets
-          </ons-col>
-          <ons-col align="center" width="40%" class="col ons-col-inner">
-            <input type="text" id="rebase_code_offsets" name="code_address" class="text-input text-input--material text-full" oninput="codelist.get_rebase_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
-          </ons-col>
-        </ons-row>
+          </div>
+          <input type="text" id="rebase_code_pointer" name="code_address" class="text-input text-input--material text-full" oninput="codelist.get_rebase_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
+          <label class="field-label" for="rebase_code_offsets">Offsets</label>
+          <input type="text" id="rebase_code_offsets" name="code_address" class="text-input text-input--material text-full" oninput="codelist.get_rebase_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
+        </ons-col>
       </ons-row>
       <ons-row id="rebase_aob">
-        <ons-row>
-          <ons-col align="center" width="80%" class="col ons-col-inner">
-            New AOB
-          </ons-col>
-          <ons-col align="center" width="20%" class="col ons-col-inner">
+        <ons-col width="100%" class="col ons-col-inner">
+          <div class="field-label">
+            <label for="rebase_code_aob">New AOB</label>
             <ons-button modifier="quiet" id="rebase_code_aob_paste_button" onclick="codelist.get_rebase_dialog().on_aob_paste()"><ons-icon icon="md-paste"></ons-icon></ons-button>
-          </ons-col>
-        </ons-row>
-        <ons-row>
-          <ons-col align="center" width="100%" class="col ons-col-inner">
-            <input type="text" id="rebase_code_aob" name="code_address" style="display:block; margin: 0 auto" class="text-input text-input--material text-full" oninput="codelist.get_rebase_dialog().validate()" autocomplete="chrome-off" autocapitalize="off">
-          </ons-col>
-        </ons-row>
+          </div>
+          <textarea id="rebase_code_aob" name="code_address" class="text-input text-input--material aob-textarea" rows="3" cols="48" wrap="soft" oninput="codelist.get_rebase_dialog().validate()" autocomplete="chrome-off" autocapitalize="off"></textarea>
+        </ons-col>
+      </ons-row>
         <ons-row>
           <ons-col align="center" width="30%" class="col ons-col-inner">
             Offset

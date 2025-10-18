@@ -473,6 +473,42 @@
         }
     }
 
+    function ensure_search_value_control(is_array) {
+        var current = $("#search_value");
+        var parent = current.parent();
+        var val = current.val();
+        var commonAttrs = {
+            'id': 'search_value',
+            'name': 'search_value',
+            'class': 'text-input text-input--material r-value' + (is_array ? ' aob-textarea' : ''),
+            'onkeydown': 'search.on_return_pressed(this)',
+            'oninput': 'search.search_value_changed(this.value)',
+            'autocomplete': 'off'
+        };
+        if (is_array && current.is('input')) {
+            // Replace input with textarea (3 lines, 48ch wrap)
+            var ta = $('<textarea rows="3" cols="48" wrap="soft"></textarea>');
+            Object.keys(commonAttrs).forEach(function(k){ ta.attr(k, commonAttrs[k]); });
+            ta.val(val);
+            current.replaceWith(ta);
+            inp_search_value = ta;
+            ta.on('click', function(){ this.select(); });
+        } else if (!is_array && current.is('textarea')) {
+            // Replace textarea with single-line input
+            var inp = $('<input type="text" inputmode="decimal"/>');
+            Object.keys(commonAttrs).forEach(function(k){ inp.attr(k, commonAttrs[k]); });
+            inp.val(val);
+            current.replaceWith(inp);
+            inp_search_value = inp;
+            inp.on('click', function(){ this.select(); });
+        } else {
+            // Keep reference fresh
+            inp_search_value = current;
+        }
+        // Adjust inputmode for array vs numeric
+        inp_search_value.attr('inputmode', is_array ? 'text' : 'decimal');
+    }
+
     function setup_search_value(result) {
         switch (current_flow) {
             case flow_map["FLOW_START"]:
@@ -482,6 +518,7 @@
                     row_search_value.hide()
                 }else {
                     row_search_value.show()
+                    ensure_search_value_control(has(result, 'size') && result.size === 'array')
                     if (has(result, "value") && has(result, "size")) {
                         inp_search_value.val(result.value)
                         validate_value(String(result.value), result.size, result.type, result.proximity)
@@ -504,6 +541,7 @@
             case flow_map["FLOW_RESULTS"]:
                 inp_search_value.removeAttr('disabled')
                 if (has(result, "value") && has(result, "size")) {
+                    ensure_search_value_control(result.size === 'array')
                     inp_search_value.val(result.value)
                     validate_value(String(result.value), result.size, result.type, result.proximity)
                 }else {
@@ -833,6 +871,19 @@
                 }
                 break
         }
+        // Ensure the search value control matches the selected size (array -> textarea)
+        // Do this here so the element is swapped immediately when size changes.
+        try { ensure_search_value_control(_size === 'array'); } catch (e) {}
+        // Also ensure all current result controls adopt the same styling immediately
+        try {
+            var isArray = (_size === 'array');
+            var elements = $(".result-row");
+            for (var i = 0; i < elements.length; i++) {
+                var el = $(elements[i]);
+                var valueEl = ensure_result_control(el, isArray, i);
+                valueEl.attr('inputmode', isArray ? 'text' : 'decimal');
+            }
+        } catch (e) {}
     }
 
     function update_search_value(_type, _size, _value, _proxy) {
@@ -1041,6 +1092,42 @@
         proxy_valid = proxy_valid_address && proxy_valid_size
     }
 
+    function ensure_result_control(containerEl, is_array, index) {
+        var inputSel = "input[name='search_value']";
+        var taSel = "textarea[name='search_value']";
+        var current = containerEl.find(inputSel + ", " + taSel);
+        if (current.length === 0) {
+            return containerEl.find(inputSel); // fallback
+        }
+        var val = current.val();
+        var common = {
+            'id': 'result_value_' + index,
+            'name': 'search_value',
+            'class': 'text-input text-input--material r-value' + (is_array ? ' aob-textarea' : ''),
+            'autocomplete': 'chrome-off'
+        };
+        if (is_array && current.is('input')) {
+            var ta = $('<textarea rows="3" cols="48" wrap="soft"></textarea>');
+            Object.keys(common).forEach(function(k){ ta.attr(k, common[k]); });
+            ta.attr('onkeydown', 'search.result_change(this)');
+            ta.attr('onblur', 'search.result_change(this)');
+            ta.val(val);
+            current.replaceWith(ta);
+            ta.on('click', function(){ this.select(); });
+            return ta;
+        } else if (!is_array && current.is('textarea')) {
+            var inp = $('<input type="text" inputmode="decimal"/>');
+            Object.keys(common).forEach(function(k){ inp.attr(k, common[k]); });
+            inp.attr('onkeydown', 'search.result_change(this)');
+            inp.attr('onblur', 'search.result_change(this)');
+            inp.val(val);
+            current.replaceWith(inp);
+            inp.on('click', function(){ this.select(); });
+            return inp;
+        }
+        return current;
+    }
+
     function populate_results(results, is_array) {
         current_search_results = results
         var elements = $(".result-row")
@@ -1049,7 +1136,7 @@
             if (i < results.length) {
                 var item = results[i]
                 var address_element = el.find(".address")
-                var value_element = el.find("input[name='search_value']")
+                var value_element = ensure_result_control(el, is_array, i)
                 var add_element = el.find("ons-button")
                 var freeze_element = el.find(".freeze")
                 value_element.attr('inputmode', is_array ? 'text' : 'decimal')

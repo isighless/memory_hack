@@ -41,3 +41,44 @@ label,
   -ms-user-select: none !important;
   user-select: none !important;
 }
+
+.aob-textarea{
+  font-family: "Lucida Console", monospace;
+  font-size: 14px;
+  line-height: 1.25;
+
+  width: 51ch;
+  box-sizing: content-box;
+
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
+
+  resize: vertical;
+  padding: .25rem 1rem;
+  min-height: 3.5rem;
+}
+
+
+
+.aob-textarea[readonly] {
+  background-color: inherit;
+}
+
+/* Allow AOB fields to render at their intended width without being clipped */
+#row_search_value .col.ons-col-inner,
+.result-row .col.ons-col-inner {
+  overflow: visible;
+}
+
+.field-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-align: left;
+}
+
+.field-label label {
+  font-weight: inherit;
+}
