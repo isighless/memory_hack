@@ -43,9 +43,47 @@
                 '<ons-col align="center" width="13%" class="col ons-col-inner aob" id="result_aob_##count##"><ons-button modifier="quiet" name="copy_button" onclick="aob.copy_result(##count##, this)" ##disabled##><ons-icon icon="md-copy" size="20px"/></ons-button></ons-col>',
             '</ons-row>',
             '<ons-row>',
-                '<ons-col  name="aob" align="center" width="95%" class="col ons-col-inner aob" id="result_aob_##count##">##aob##</ons-col>',
-            '</ons-row>',
-        '</ons-list-item>'].join('\n')
+        '<ons-col  name="aob" align="center" width="95%" class="col ons-col-inner aob aob-pattern" id="result_aob_##count##">##aob##</ons-col>',
+        '</ons-row>',
+    '</ons-list-item>'].join('\n')
+
+    function escape_html(value) {
+        if (value == null) {
+            return '';
+        }
+        return value.replace(/[&<>"']/g, function(match) {
+            switch (match) {
+                case '&':
+                    return '&amp;';
+                case '<':
+                    return '&lt;';
+                case '>':
+                    return '&gt;';
+                case '"':
+                    return '&quot;';
+                case '\'':
+                    return '&#39;';
+                default:
+                    return match;
+            }
+        });
+    }
+
+    function format_aob_display(value) {
+        if (typeof value !== 'string') {
+            return escape_html(value === undefined || value === null ? '' : String(value));
+        }
+        if (value.length === 0) {
+            return '<span class="aob-pattern-line"></span>';
+        }
+        var segments = [];
+        for (var i = 0; i < value.length; i += 48) {
+            segments.push(value.slice(i, i + 48));
+        }
+        return segments.map(function(segment) {
+            return '<span class="aob-pattern-line">' + escape_html(segment) + '</span>';
+        }).join('');
+    }
 
     //Public Property
     aob.test = "Bacon Strips";
@@ -804,10 +842,11 @@
                             res_id.find('[name="offset"]').html(offset)
                             res_id.find('[name="size"]').html(size)
                             res_id.find('[name="counts"]').html('<b>'+aob_count+'</b>')
-                            res_id.find('[name="aob"]').html(aob)
+                            res_id.find('[name="aob"]').html(format_aob_display(aob))
                             continue
                         }
-                        var ele_txt = row_item_template.replaceAll('##count##', i).replaceAll('##size##', size).replaceAll('##offset##', offset).replaceAll('##aob##', aob).replaceAll('##disabled##', aob == '...' ? 'disabled' : '')
+                        var formattedAob = format_aob_display(aob)
+                        var ele_txt = row_item_template.replaceAll('##count##', i).replaceAll('##size##', size).replaceAll('##offset##', offset).replaceAll('##aob##', formattedAob).replaceAll('##disabled##', aob == '...' ? 'disabled' : '')
                         div_search_result_container.append(ele_txt)
                     }
                     while ($("#result_"+last_index).length > 0) {
@@ -1199,7 +1238,6 @@
     }
 
 }( window.aob = window.aob || {}, jQuery ));
-
 
 
 
