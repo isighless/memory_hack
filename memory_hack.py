@@ -23,7 +23,13 @@ if __name__ == '__main__':
         # Soft-reload app.* modules so updated code is picked up without full exit
         try:
             importlib.invalidate_caches()
-            to_reload = [name for name in list(sys.modules.keys()) if name.startswith('app.')]
+            # Ensure no stale user script modules linger across restarts
+            for name in [n for n in list(sys.modules.keys()) if n.startswith('app.user_scripts')]:
+                sys.modules.pop(name, None)
+            to_reload = [
+                name for name in list(sys.modules.keys())
+                if name.startswith('app.') and not name.startswith('app.user_scripts')
+            ]
             # Reload leaves first (longer names first), then parents
             for name in sorted(to_reload, key=lambda n: (-n.count('.'), -len(n))):
                 try:

@@ -1,4 +1,15 @@
 (function( script, $, undefined ) {
+    // Mirror all toasts to the browser console for easier debugging
+    try {
+        if (window.ons && ons.notification && typeof ons.notification.toast === 'function' && !ons.notification._wrapped_for_console) {
+            var __orig_toast = ons.notification.toast;
+            ons.notification.toast = function(msg, opts) {
+                try { console.warn('Toast:', msg); } catch(e) {}
+                return __orig_toast.call(ons.notification, msg, opts);
+            };
+            ons.notification._wrapped_for_console = true;
+        }
+    } catch (e) {}
 
     //Private Property
     var script_list = [];
@@ -194,8 +205,16 @@
             data: JSON.stringify(interact_data),
             dataType: "json",
             contentType: "application/json; charset=utf-8",
-            success: (res) => {$("#"+id).removeAttr('disabled');  on_script_interacted(res);}
-            });
+            success: function(res) {
+                $("#"+id).removeAttr('disabled');
+                try {
+                    if (res && res.status && res.status === 'SCRIPT_ERROR' && res.error) {
+                        ons.notification.toast(res.error, { timeout: 5000, animation: 'fall' });
+                    }
+                } catch (e) {}
+                on_script_interacted(res);
+            }
+        });
     }
 
     function populate_scripts(scripts) {

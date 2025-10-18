@@ -1,4 +1,6 @@
 import importlib.util
+import importlib.machinery
+import types
 import inspect
 import logging
 import platform
@@ -17,6 +19,8 @@ from app.helpers.data_store import DataStore
 from app.helpers.directory_utils import scripts_directory
 from app.helpers.exceptions import ScriptException, ProcessException
 from app.script_common.base_script import BaseScript
+import logging
+logger = logging.getLogger(__name__)
 
 
 class Script(MemoryHandler):
@@ -36,7 +40,8 @@ class Script(MemoryHandler):
         shutil.copytree(Path('./scripts'), self.directory, dirs_exist_ok=True)
 
     def kill(self):
-        self.release()
+        # Fully unload the running script and clean imported modules
+        self.unload_script()
     def release(self):
         if self.script_thread == threading.current_thread():
             return
@@ -88,11 +93,19 @@ class Script(MemoryHandler):
                 self.handle_script_ui_get(req, resp)
             elif script_type == "SCRIPT_INTERACT":
                 resp.content_type = falcon.app_helpers.MEDIA_JSON
-                self.handle_script_interact(req, resp)
+                try:
+                    self.handle_script_interact(req, resp)
+                except ScriptException as e:
+                    raise
+                except Exception as e:
+                    # Surface unexpected interaction errors to the UI for easier debugging
+                    raise ScriptException(f"Script Error: {type(e).__name__}: {e}")
             elif script_type == "SCRIPT_UPLOAD_FILE":
                 self.handle_script_upload(req, resp)
         except ScriptException as e:
-            self.unload_script()
+            # Do not unload the script on interaction errors; preserve state
+            if script_type != "SCRIPT_INTERACT":
+                self.unload_script()
             resp.media = self.send_error(e)
             self.error = ""
             if e.is_from_thread():
@@ -183,18 +196,39 @@ class Script(MemoryHandler):
 
     def set_app(self, app_name: str):
         try:
+            logger.info("Script.set_app called with app_name=%s", app_name)
             proc_service = DataStore().get_service('process')
             proc_service.request_process('scripts', app_name)
+            # Ensure our local state reflects the selected process even if registration paths diverge
+            try:
+                p_data = proc_service.service_pids.get('scripts')
+                if p_data is not None:
+                    self.p_set(p_data)
+            except Exception:
+                pass
             if app_name == '_null':
                 app_name = ""
             if app_name:
+                logger.info("Script.set_app: request_process returned; has_mem=%s, script_obj=%s", self.has_mem(), 'set' if self.current_script_obj else 'none')
                 if not self.has_mem():
-                    raise ScriptException('Could not find requested process for this script.')
-                if self.current_script_obj.get_memory():
+                    raise ScriptException('Could not find selected process for this script.')
+                # Safely detach from old memory if needed
+                if self.current_script_obj and self.current_script_obj.get_memory():
                     self.current_script_obj.set_memory(None)
                     self.current_script_obj.on_process_unattached()
-                self.current_script_obj.set_memory(self.mem())
-                self.current_script_obj.on_process_attached()
+                # Attach new memory to current script object if present
+                if self.current_script_obj:
+                    self.current_script_obj.set_memory(self.mem())
+                    self.current_script_obj.on_process_attached()
+                    # Notify script of selection if it declares a handler
+                    try:
+                        cb = getattr(self.current_script_obj, 'process_selected', None)
+                        if callable(cb):
+                            cb(app_name)
+                    except Exception:
+                        # Avoid breaking interaction flow if script callback fails
+                        pass
+                logger.info("Script.set_app attached to process successfully")
             else:
                 self.current_script_obj.set_memory(None)
                 self.current_script_obj.on_process_unattached()
@@ -276,11 +310,41 @@ class Script(MemoryHandler):
         self.current_script_obj = None
         self.current_script = ""
         if self.mod_name:
-            del sys.modules[self.mod_name]
+            # Remove the package and any submodules to avoid stale modules lingering
+            prefix = self.mod_name + "."
+            for key in list(sys.modules.keys()):
+                if key == self.mod_name or key.startswith(prefix):
+                    sys.modules.pop(key, None)
             self.mod_name = ""
 
     def load_script(self, name):
         self.mod_name = 'app.user_scripts.{}'.format(name)
+        # Ensure parent namespace exists so relative imports and reloads behave
+        # Ensure a robust namespace package for 'app.user_scripts'
+        parent_pkg = sys.modules.get('app.user_scripts')
+        if parent_pkg is None:
+            try:
+                spec = importlib.machinery.ModuleSpec('app.user_scripts', loader=None, is_package=True)
+                # Ensure submodule search path for nested imports inside user scripts
+                spec.submodule_search_locations = [str(self.directory)]
+                pkg = types.ModuleType('app.user_scripts')
+                pkg.__path__ = [str(self.directory)]
+                pkg.__package__ = 'app.user_scripts'
+                pkg.__spec__ = spec
+                sys.modules['app.user_scripts'] = pkg
+            except Exception:
+                pass
+        else:
+            # Keep search path up-to-date across restarts
+            try:
+                paths = set(getattr(parent_pkg, '__path__', []))
+                paths.add(str(self.directory))
+                parent_pkg.__path__ = list(paths)
+                if getattr(parent_pkg, '__spec__', None) and getattr(parent_pkg.__spec__, 'submodule_search_locations', None) is not None:
+                    if str(self.directory) not in parent_pkg.__spec__.submodule_search_locations:
+                        parent_pkg.__spec__.submodule_search_locations.append(str(self.directory))
+            except Exception:
+                pass
         try:
             spec = importlib.util.spec_from_file_location(self.mod_name, self.directory.joinpath(name).joinpath('__init__.py'))
             mod = importlib.util.module_from_spec(spec)  #import_module(self.mod_name)
@@ -346,6 +410,3 @@ class Script(MemoryHandler):
             except Exception as e:
                 logging.error(str(e))
                 self.error = Script.parse_error(self.filename, traceback.format_exc(limit=-1))
-
-
-

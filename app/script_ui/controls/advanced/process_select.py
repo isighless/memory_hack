@@ -1,3 +1,4 @@
+import logging
 from app.helpers.data_store import DataStore
 from ..button import Button
 from ..column import Column
@@ -8,6 +9,7 @@ from ..text import Text
 
 
 class ProcessSelect(Group):
+    logger = logging.getLogger(__name__)
     def __init__(self, on_process_selected: callable, **kwargs):
         super().__init__(**kwargs)
         self.on_process_selected = on_process_selected
@@ -41,9 +43,15 @@ class ProcessSelect(Group):
         select.set_values(procs)
 
     def on_process_select_changed(self, name, ele_id, data):
-        select: Select = self.get_element("PROCESS_SELECT_CONTROL")
         value = data['value']
-        DataStore().get_service('script').set_app(select.get_selection())
+        # Use the value passed from the client to avoid depending on element lookups
+        try:
+            ProcessSelect.logger.info("ProcessSelect change for %s value=%s", name, value)
+            DataStore().get_service('script').set_app(value)
+        except Exception as e:
+            # Surface interaction errors in the UI and continue
+            self.js("ons.notification.toast('" + str(e).replace("'", "\\'") + "', { timeout: 5000, animation: 'fall' })")
+            raise
         if value != '_null':
             self.get_element("REFRESH_PROCESS_LIST_BUTTON").disable()
             self.on_process_selected(value)
@@ -53,7 +61,6 @@ class ProcessSelect(Group):
 
     def on_refresh_pressed(self, name, ele_id, data):
         self.refresh()
-
 
 
 

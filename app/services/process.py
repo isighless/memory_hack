@@ -1,4 +1,5 @@
 import fnmatch
+import logging
 import os
 import platform
 import threading
@@ -14,6 +15,8 @@ from app.helpers.exceptions import ProcessException
 from app.helpers.memory_utils import is_process_valid
 from app.helpers.process_utils import is_pid_valid, can_attach
 from app.services.service import Service
+
+logger = logging.getLogger(__name__)
 
 
 class Process(Service):
@@ -133,22 +136,31 @@ class Process(Service):
                 pass
 
     def open_process(self, p: str, service: str):
+        logger.info("open_process(service=%s, exe=%s)", service, p)
         p_data = None
         try:
-            pid = [x[0] for x in self.pid_map.items() if x[1]['exe'] == p and x[1]['valid']][0]
+            matches = [(k, v) for k, v in self.pid_map.items() if v['exe'] == p and v['valid']]
+            if not matches:
+                logger.warning("open_process: no valid pid match for exe=%s; candidates=%d", p, len(self.pid_map))
+                raise ProcessException("Process {} does not exist".format(p))
+            pid = matches[0][0]
             if pid in self.open_pids:
                 p_data = self.open_pids[pid]
             else:
                 proc = mem_edit.Process(pid)
                 p_data = {'process': proc, 'pid': pid, 'exe': p}
                 self.open_pids[pid] = p_data
-        except:
+        except ProcessException:
+            raise
+        except Exception:
+            logger.exception("open_process: unexpected error while opening exe=%s", p)
             raise ProcessException("Process {} does not exist".format(p))
         self.service_pids[service] = p_data
         return p_data
 
 
     def request_process(self, service: str, p: str):
+        logger.info("request_process(service=%s, exe=%s)", service, p)
         if service not in [x.get_service_name() for x in self.process_classes]:
             raise ProcessException('Class does not exist.')
         if service in self.service_pids:
@@ -159,6 +171,7 @@ class Process(Service):
         if p and p != '_null':
             proc = self.open_process(p, service)
             cls = [x for x in self.process_classes if x.get_service_name() == service][0]
+            logger.info("request_process: delivering pid=%s to service=%s", proc['pid'], service)
             cls.p_set(proc)
             if not self._process_monitor_thread:
                 self._process_monitor_event = Event()
@@ -260,7 +273,6 @@ class Process(Service):
         bl = p.read_text().splitlines()
         blacklist = [b.strip() for b in bl]
         mem_edit.Process.set_blacklist(blacklist)
-
 
 
 
