@@ -45,6 +45,7 @@
     codelist.on_tab_set(ds)
     aob.on_tab_set(ds)
     script.on_tab_set(ds)
+    settings.on_tab_set(ds)
 
   });
 
@@ -68,6 +69,7 @@
     codelist.ready()
     aob.ready()
     script.ready()
+    settings.ready()
     document.clipboard = {
       'copy': (data) => {
         document.clipboard.data = data;
@@ -222,6 +224,8 @@ div .input_item{
     <ons-tab page="/aob" data-tab="aob" label="AOB" icon="md-trending-up" #aob_active#>
     </ons-tab>
     <ons-tab page="/script" data-tab="scripts" label="Scripts" icon="md-language-python" #script_active#>
+    </ons-tab>
+    <ons-tab page="/settings" data-tab="settings" label="Settings" icon="md-settings">
     </ons-tab>
   </ons-tabbar>
 </ons-page>
@@ -458,5 +462,6 @@ div .input_item{
   <script src="resources/static/codelist.js" type="text/javascript"></script>
   <script src="resources/static/aob.js" type="text/javascript"></script>
   <script src="resources/static/script.js" type="text/javascript"></script>
+  <script src="resources/static/settings.js" type="text/javascript"></script>
 </body>
 </html>

@@ -1,1 +1,1 @@
-from app.main import AOBResource, MainResource, SearchResource, ScriptResource, InfoResource, CodeListResource
+from app.main import AOBResource, MainResource, SearchResource, ScriptResource, InfoResource, CodeListResource, SettingsResource

@@ -106,3 +106,20 @@ class InfoResource:
         return procs, crc
 
 
+class SettingsResource:
+    def on_get(self, req, resp):
+        resp.content_type = falcon.MEDIA_HTML
+        with open('resources/settings.html', 'rt') as ac:
+            resp.text = ac.read()
+
+    def on_post(self, req, resp):
+        resp.media = {}
+        resp.content_type = falcon.app_helpers.MEDIA_JSON
+        command = req.media.get('command', '')
+        if command == 'RESTART_SERVER':
+            DataStore().get_operation_control().request_restart()
+            resp.media['status'] = 'ok'
+            resp.media['message'] = 'Restart requested'
+        else:
+            resp.media['status'] = 'error'
+            resp.media['message'] = 'Unknown command'
