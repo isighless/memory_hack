@@ -145,6 +145,35 @@ class SettingsResource:
             metadata = get_log_metadata()
             resp.media['status'] = 'ok'
             resp.media['metadata'] = metadata
+        elif command == 'GET_PROCESS_BLACKLIST':
+            process_service = DataStore().get_service('process')
+            entries, available = process_service.get_blacklist_snapshot()
+            resp.media['status'] = 'ok'
+            resp.media['blacklist'] = entries
+            resp.media['available'] = available
+        elif command == 'ADD_PROCESS_BLACKLIST':
+            process_name = (req.media or {}).get('process')
+            process_service = DataStore().get_service('process')
+            added = process_service.add_to_blacklist(process_name)
+            entries, available = process_service.get_blacklist_snapshot()
+            resp.media['status'] = 'ok' if added else 'noop'
+            resp.media['blacklist'] = entries
+            resp.media['available'] = available
+        elif command == 'REMOVE_PROCESS_BLACKLIST':
+            process_name = (req.media or {}).get('process')
+            process_service = DataStore().get_service('process')
+            removed = process_service.remove_from_blacklist(process_name)
+            entries, available = process_service.get_blacklist_snapshot()
+            resp.media['status'] = 'ok' if removed else 'noop'
+            resp.media['blacklist'] = entries
+            resp.media['available'] = available
+        elif command == 'BLACKLIST_ALL_PROCESSES':
+            process_service = DataStore().get_service('process')
+            added_any = process_service.add_all_processes_to_blacklist()
+            entries, available = process_service.get_blacklist_snapshot()
+            resp.media['status'] = 'ok' if added_any else 'noop'
+            resp.media['blacklist'] = entries
+            resp.media['available'] = available
         else:
             resp.media['status'] = 'error'
             resp.media['message'] = 'Unknown command'

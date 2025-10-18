@@ -51,6 +51,9 @@
                 search.on_update_process_list(p_data.add, p_data.remove);
                 codelist.on_update_process_list(p_data.add, p_data.remove);
                 aob.on_update_process_list(p_data.add, p_data.remove);
+                if (window.settings && settings.on_update_process_list) {
+                    settings.on_update_process_list(p_data.add, p_data.remove);
+                }
             }
             for (const service of result.services) {
                 if (service.name === 'search') {

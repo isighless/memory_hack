@@ -1,4 +1,37 @@
 <ons-page id="settings_page">
+  <style>
+    #settings_page .settings-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+    #settings_page .settings-log-actions ons-button,
+    #settings_page .settings-blacklist-controls ons-button {
+      min-width: 48px;
+    }
+    #settings_page .settings-blacklist-controls select {
+      min-width: 220px;
+    }
+    #settings_page ons-list.settings-blacklist-list {
+      margin-bottom: 6px;
+    }
+    #settings_page ons-list.settings-blacklist-list ons-list-item {
+      align-items: center;
+      line-height: 1.0;
+    }
+    #settings_page ons-list.settings-blacklist-list ons-list-item .left {
+      margin-right: 8px;
+    }
+    #settings_page ons-list.settings-blacklist-list ons-list-item .left ons-button {
+      padding: 2px 6px;
+      min-width: 32px;
+    }
+    #settings_page ons-list.settings-blacklist-list ons-list-item .center {
+      font-size: 14px;
+    }
+  </style>
   <h2>Settings</h2>
 
   <ons-card>
@@ -20,6 +53,20 @@
       <p>Use the button below to restart the Memory Hack server. This will stop any ongoing operations.</p>
       <ons-button id="restart_server_button" onclick="settings.restart_server(this)">Restart Server</ons-button>
       <p id="restart_status" style="margin-top:8px;color:#666;"></p>
+    </div>
+  </ons-card>
+
+  <ons-card>
+    <div class="content" style="padding: 8px;">
+      <p>Manage the process blacklist to hide background tasks from selection lists.</p>
+      <div class="settings-action-row settings-blacklist-controls">
+        <select id="blacklist_add_select" class="select-input select-input--material" onchange="settings.on_blacklist_select_change(this)"></select>
+        <ons-button id="blacklist_add_all_button" modifier="material" onclick="settings.add_all_to_blacklist(this)">Blacklist All</ons-button>
+      </div>
+      <p>Currently blacklisted processes:</p>
+      <ons-list id="blacklist_items" class="settings-blacklist-list"></ons-list>
+      <p id="blacklist_empty" style="margin-top: 6px; color: #888; font-size: 12px; display: none;">No processes are currently blacklisted.</p>
+      <p id="blacklist_status" style="margin-top: 4px; color: #5c6bc0; font-size: 12px;"></p>
     </div>
   </ons-card>
 </ons-page>

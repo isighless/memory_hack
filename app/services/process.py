@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class Process(Service):
     def __init__(self):
         self.user = os.environ.get('USER', os.environ.get('USERNAME'))
+        self.blacklist_path = self._blacklist_path()
         self.blacklist = self.load_blacklist()
         self.pid = 0
         self.pids = []
@@ -250,16 +251,101 @@ class Process(Service):
             return False
         return any(fnmatch.fnmatch(name, x) for x in self.blacklist)
 
+    def _blacklist_path(self) -> Path:
+        root = Path("./resources")
+        filename = 'win_blacklist.txt' if os.name == 'nt' else 'lin_blacklist.txt'
+        return root.joinpath(filename)
+
     def load_blacklist(self):
-        p = Path("./resources")
-        if os.name == 'nt':
-            p = p.joinpath('win_blacklist.txt')
-        else:
-            p = p.joinpath('lin_blacklist.txt')
-        if not p.exists():
+        path = getattr(self, 'blacklist_path', None) or self._blacklist_path()
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
             return []
-        bl = p.read_text().splitlines()
-        return [b.strip() for b in bl]
+        bl = path.read_text(encoding='utf-8').splitlines()
+        entries = [b.strip() for b in bl if b.strip()]
+        unique = []
+        seen = set()
+        for entry in entries:
+            key = entry.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(entry)
+        return unique
+
+    def save_blacklist(self):
+        path = getattr(self, 'blacklist_path', None) or self._blacklist_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ordered = sorted(set(self.blacklist), key=lambda x: x.casefold())
+        path.write_text("\n".join(ordered) + ("\n" if ordered else ""), encoding='utf-8')
+        self.blacklist = ordered
+        self._apply_blacklist_to_pid_map()
+
+    def get_blacklist_snapshot(self):
+        entries = sorted(self.blacklist, key=lambda x: x.casefold())
+        # Copy pid_map values quickly while holding the lock minimally
+        with self.pid_map_lock:
+            snapshot = list(self.pid_map.values())
+        available_map = {}
+        for details in snapshot:
+            name = details.get('name')
+            if not name:
+                continue
+            key = name.casefold()
+            if self.is_blacklisted(name):
+                continue
+            if key not in available_map:
+                display = details.get('exe') or name
+                available_map[key] = {"name": name, "display": display}
+        available = sorted(available_map.values(), key=lambda x: x["name"].casefold())
+        return entries, available
+
+    def add_to_blacklist(self, name: str) -> bool:
+        entry = (name or '').strip()
+        if not entry:
+            return False
+        if any(entry.casefold() == existing.casefold() for existing in self.blacklist):
+            return False
+        self.blacklist.append(entry)
+        self.save_blacklist()
+        return True
+
+    def remove_from_blacklist(self, name: str) -> bool:
+        entry = (name or '').strip()
+        if not entry:
+            return False
+        remaining = [b for b in self.blacklist if b.casefold() != entry.casefold()]
+        if len(remaining) == len(self.blacklist):
+            return False
+        self.blacklist = remaining
+        self.save_blacklist()
+        return True
+
+    def add_all_processes_to_blacklist(self) -> bool:
+        added = False
+        with self.pid_map_lock:
+            names = {details.get('name') for details in self.pid_map.values() if details.get('name')}
+        for name in names:
+            if not name:
+                continue
+            if any(name.casefold() == existing.casefold() for existing in self.blacklist):
+                continue
+            self.blacklist.append(name)
+            added = True
+        if added:
+            self.save_blacklist()
+        return added
+
+    def _apply_blacklist_to_pid_map(self):
+        with self.pid_map_lock:
+            for pid, info in self.pid_map.items():
+                try:
+                    valid = info.get('exe') is not None and is_pid_valid(pid) and not self.is_blacklisted(info.get('name', '')) and can_attach(pid)
+                except Exception:
+                    valid = False
+                info['valid'] = valid
+            self.last_update_time = int(time.time() * 100) - 160000000000
 
 
     def load_region_blacklist(self):
@@ -273,8 +359,6 @@ class Process(Service):
         bl = p.read_text().splitlines()
         blacklist = [b.strip() for b in bl]
         mem_edit.Process.set_blacklist(blacklist)
-
-
 
 
 
