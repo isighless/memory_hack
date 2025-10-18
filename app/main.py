@@ -2,6 +2,12 @@ import falcon
 
 from app.helpers.data_store import DataStore
 from app.helpers.process_utils import get_process_names
+from app.helpers.logging_utils import (
+    clear_log_file,
+    get_log_file_path,
+    get_log_metadata,
+    read_log_tail,
+)
 from app.services.aob import AOB
 from app.services.codes import CodeList
 from app.services.process import Process
@@ -115,11 +121,45 @@ class SettingsResource:
     def on_post(self, req, resp):
         resp.media = {}
         resp.content_type = falcon.app_helpers.MEDIA_JSON
-        command = req.media.get('command', '')
+        command = (req.media or {}).get('command', '')
+
         if command == 'RESTART_SERVER':
             DataStore().get_operation_control().request_restart()
             resp.media['status'] = 'ok'
             resp.media['message'] = 'Restart requested'
+        elif command == 'GET_SERVER_LOG':
+            limit = req.media.get('limit', 400) if req.media else 400
+            try:
+                line_limit = int(limit)
+            except (TypeError, ValueError):
+                line_limit = 400
+
+            lines = read_log_tail(line_limit)
+            metadata = get_log_metadata()
+            resp.media['status'] = 'ok'
+            resp.media['log'] = "\n".join(lines)
+            resp.media['line_count'] = len(lines)
+            resp.media['metadata'] = metadata
+        elif command == 'CLEAR_SERVER_LOG':
+            clear_log_file()
+            metadata = get_log_metadata()
+            resp.media['status'] = 'ok'
+            resp.media['metadata'] = metadata
         else:
             resp.media['status'] = 'error'
             resp.media['message'] = 'Unknown command'
+
+
+class SettingsLogDownloadResource:
+    def on_get(self, req, resp):
+        path = get_log_file_path()
+        metadata = get_log_metadata()
+        if not metadata.get('exists', False):
+            resp.status = falcon.HTTP_404
+            resp.media = {'status': 'error', 'message': 'Log file not found'}
+            return
+
+        resp.content_type = 'text/plain; charset=utf-8'
+        resp.downloadable_as = path.name
+        resp.stream = path.open('rb')
+        resp.stream_len = path.stat().st_size

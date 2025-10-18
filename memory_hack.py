@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 import falcon
 
 from falcon_multipart.middleware import MultipartMiddleware
@@ -13,8 +14,17 @@ class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
         pass
 
 if __name__ == '__main__':
-    # Configure logging for console output
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    # Configure logging for console and rotating file output
+    base_dir = Path(__file__).parent
+    log_dir = base_dir.joinpath('logs')
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir.joinpath('memory_hack.log')
+
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s', force=True)
+    file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+    logging.getLogger().addHandler(file_handler)
+
     logger = logging.getLogger(__name__)
     pt = Path(__file__).parent.joinpath('app')
     os.chdir(pt)
@@ -49,6 +59,7 @@ if __name__ == '__main__':
         AOBResource = getattr(app_module, 'AOBResource')
         InfoResource = getattr(app_module, 'InfoResource')
         SettingsResource = getattr(app_module, 'SettingsResource')
+        SettingsLogDownloadResource = getattr(app_module, 'SettingsLogDownloadResource')
 
         app = falcon.App(middleware=[MultipartMiddleware()])
         initialize()
@@ -57,6 +68,7 @@ if __name__ == '__main__':
         app.add_route('/codelist', CodeListResource())
         app.add_route('/script', ScriptResource())
         app.add_route('/settings', SettingsResource())
+        app.add_route('/settings/log/download', SettingsLogDownloadResource())
         app.add_route('/aob', AOBResource())
         app.add_route('/info', InfoResource())
         app.add_static_route('/resources/static', pt.joinpath("resources/static/").absolute())

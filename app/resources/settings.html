@@ -3,6 +3,20 @@
 
   <ons-card>
     <div class="content" style="padding: 8px;">
+      <p>Review recent server logs below or download the full log file.</p>
+      <div class="settings-action-row settings-log-actions">
+        <ons-button id="refresh_log_button" modifier="material" title="Refresh Logs" onclick="settings.refresh_logs(this)">Refresh</ons-button>
+        <ons-button id="download_log_button" modifier="material" title="Download Log" onclick="settings.download_logs()">Save</ons-button>
+        <ons-button id="clear_log_button" modifier="material" title="Clear Log" onclick="settings.clear_logs(this)">Delete</ons-button>
+      </div>
+      <textarea id="server_log_view" readonly style="width: 100%; height: 220px; font-family: Consolas, 'Courier New', monospace; font-size: 12px; white-space: pre; background-color: #111; color: #e5e5e5; padding: 8px; border-radius: 4px; border: 1px solid #333;"></textarea>
+      <p id="server_log_meta" style="margin-top: 6px; color: #888; font-size: 12px;"></p>
+      <p id="server_log_status" style="margin-top: 4px; color: #5c6bc0; font-size: 12px;"></p>
+    </div>
+  </ons-card>
+
+  <ons-card>
+    <div class="content" style="padding: 8px;">
       <p>Use the button below to restart the Memory Hack server. This will stop any ongoing operations.</p>
       <ons-button id="restart_server_button" onclick="settings.restart_server(this)">Restart Server</ons-button>
       <p id="restart_status" style="margin-top:8px;color:#666;"></p>

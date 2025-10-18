@@ -8,3 +8,4 @@ app/resources/static/material-design-iconic-font/*
 app/resources/static/onsenui*
 app/resources/static/onsen-css-components.min.css
 .vscode/*
+logs/memory_hack.log
