@@ -1,0 +1,43 @@
+/* Re-enable text selection across most app content, while preserving
+   non-selectability for primary interactive controls to avoid accidental
+   drags/taps on mobile.
+*/
+
+/* Default: allow selection in page content and common overlays */
+.page__content,
+.page__content *,
+ons-dialog,
+ons-dialog *,
+ons-popover,
+ons-popover * {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Keep buttons, toggles, inputs and major nav controls non-selectable */
+button,
+.button,
+ons-button,
+.ons-button,
+ons-fab,
+.fab,
+ons-tabbar,
+.tabbar,
+ons-toolbar,
+ons-switch,
+.switch,
+.switch *,
+.checkbox,
+.checkbox *,
+input,
+select,
+textarea,
+label,
+[contenteditable="false"] {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+}
