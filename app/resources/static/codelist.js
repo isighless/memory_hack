@@ -667,13 +667,18 @@
             if (has(result, 'file_data')) {
                 _this.children = []
                 $.each(result.file_data, ( index, item ) => {
-                    var head = component_code_header.create(index, result.file_data[index])
-                    var comp = component_code.create(index, result.file_data[index])
+                    var head = component_code_header.create(index, item)
+                    var comp = component_code.create(index, item)
                     _this.children.push([head, comp])
                     _this.obj.append(head.obj)
                     _this.obj.append(comp.obj)
                     head.setup(item, head)
                     comp.setup(item, comp)
+                    var numericIndex = parseInt(index, 10)
+                    if (Number.isNaN(numericIndex)) {
+                        numericIndex = index
+                    }
+                    set_extra_components(numericIndex, comp, item.Source === 'aob' ? item.ExtraOffsets || [] : [])
                 });
             }
             if (has(result, 'results')) {
@@ -682,17 +687,51 @@
                 value_map = {}
                 extra_value_map = {}
                 $.each(result.results, ( id, res ) => {
-                    var index = _this.children.findIndex((item) => {return item[0].id == component_code_header.id+id})
-                    _this.children[index][0].setup(res, _this.children[index][0])
-                    _this.children[index][1].setup(res, _this.children[index][1])
+                    var childIndex = _this.children.findIndex((item) => {return item[0].id == component_code_header.id+id})
+                    if (childIndex < 0) {
+                        return
+                    }
+                    var headerComponent = _this.children[childIndex][0]
+                    var codeComponent = _this.children[childIndex][1]
+                    headerComponent.setup(res, headerComponent)
+                    codeComponent.setup(res, codeComponent)
+                    var codeIndex = parseInt(id, 10)
+                    if (Number.isNaN(codeIndex)) {
+                        codeIndex = id
+                    }
+                    var extrasResults = Array.isArray(res.Extras) ? res.Extras : []
+                    var expectedExtras = []
+                    if (code_data[codeIndex] && code_data[codeIndex].Source === 'aob') {
+                        expectedExtras = code_data[codeIndex].ExtraOffsets || []
+                    }
+                    if (!codeComponent.extra_components || codeComponent.extra_components.length !== expectedExtras.length) {
+                        set_extra_components(codeIndex, codeComponent, expectedExtras)
+                    }
+                    if (codeComponent.extra_components && codeComponent.extra_components.length) {
+                        for (var extraIdx = 0; extraIdx < codeComponent.extra_components.length; extraIdx++) {
+                            codeComponent.extra_components[extraIdx].update_value(extrasResults[extraIdx] || {})
+                        }
+                    } else {
+                        extra_value_map[codeIndex] = []
+                    }
                 });
             }
             else if (has(result, 'remove_index')) {
                 var id = result.remove_index
                 var index = _this.children.findIndex((item) => {return item[0].id == component_code_header.id+id})
+                var comp = _this.children[index][1]
+                if (comp.extra_components) {
+                    comp.extra_components.forEach((extraComp) => extraComp.obj.remove())
+                    comp.extra_components = []
+                }
                 _this.children[index][0].obj.remove()
                 _this.children[index][1].obj.remove()
                 _this.children.splice(index, 1)
+                var numericId = parseInt(id, 10)
+                if (Number.isNaN(numericId)) {
+                    numericId = id
+                }
+                extra_value_map[numericId] = []
             }
             else if (has(result, 'new_code')) {
                 var code = result.new_code
@@ -704,6 +743,7 @@
                 code_data[result.index] = code
                 head.setup(code, head)
                 comp.setup(code, comp)
+                set_extra_components(result.index, comp, code.Source === 'aob' ? code.ExtraOffsets || [] : [])
                 apply_events(head)
                 apply_events(comp)
             }
@@ -712,6 +752,11 @@
                 var id = result.index
                 var index = _this.children.findIndex((item) => {return item[0].id == component_code_header.id+id})
                 var pos = _this.obj.children().index(_this.children[index][0].obj)
+                var oldComp = _this.children[index][1]
+                if (oldComp.extra_components) {
+                    oldComp.extra_components.forEach((extraComp) => extraComp.obj.remove())
+                    oldComp.extra_components = []
+                }
                 _this.children[index][0].obj.remove()
                 _this.children[index][1].obj.remove()
                 _this.children.splice(index, 1)
@@ -721,10 +766,11 @@
                 _this.obj.insertAt(pos, head.obj)
                 _this.obj.insertAt(pos+1, comp.obj)
                 code_data[result.index] = code
-                apply_events(head)
-                apply_events(comp)
                 head.setup(code, head)
                 comp.setup(code, comp)
+                set_extra_components(result.index, comp, code.Source === 'aob' ? code.ExtraOffsets || [] : [])
+                apply_events(head)
+                apply_events(comp)
             }
             else if (has(result, 'changes')) {
                 var codes = result.changes
@@ -733,6 +779,11 @@
                     var id = value[0]
                     var index = _this.children.findIndex((item) => {return item[0].id == component_code_header.id+id})
                     var pos = _this.obj.children().index(_this.children[index][0].obj)
+                    var oldComp = _this.children[index][1]
+                    if (oldComp.extra_components) {
+                        oldComp.extra_components.forEach((extraComp) => extraComp.obj.remove())
+                        oldComp.extra_components = []
+                    }
                     _this.children[index][0].obj.remove()
                     _this.children[index][1].obj.remove()
                     _this.children.splice(index, 1)
@@ -742,10 +793,15 @@
                     _this.obj.insertAt(pos, head.obj)
                     _this.obj.insertAt(pos+1, comp.obj)
                     code_data[id] = code
-                    apply_events(head)
-                    apply_events(comp)
                     head.setup(code, head)
                     comp.setup(code, comp)
+                    var numericId = parseInt(id, 10)
+                    if (Number.isNaN(numericId)) {
+                        numericId = id
+                    }
+                    set_extra_components(numericId, comp, code.Source === 'aob' ? code.ExtraOffsets || [] : [])
+                    apply_events(head)
+                    apply_events(comp)
                 });
             }
         },
@@ -817,7 +873,6 @@
             } else {
                 t.children.push(component_row_aob.create(index))
                 t.children.push(component_row_offset.create(index))
-                t.children.push(component_extra_offsets.create(index, data))
             }
             t.children.forEach((item, index) =>{
                 if (index == 0) {
@@ -1322,76 +1377,6 @@
         }
     }
 
-    var component_extra_offsets = {
-        'id': 'extra_offsets_',
-        'obj': undefined,
-        'index': -1,
-        'setup': (result, _this) => {
-            if (has(result, 'ExtraOffsets')) {
-                _this.rebuild(result.ExtraOffsets)
-            }
-            if (has(result, 'Extras')) {
-                _this.update_values(result.Extras)
-            }
-        },
-        'update': (_this) => {},
-        'template': `<div id="##id##" class="extra-offsets-container">
-                        <ons-row class="extra-offsets-header">
-                            <ons-col class="col ons-col-inner">
-                                <span class="extra-offsets-title">Extra Offsets</span>
-                            </ons-col>
-                        </ons-row>
-                        <div class="extra-offsets-list" name="extra_list"></div>
-                        <div class="extra-offsets-empty" name="extra_empty">No extra offsets added yet.</div>
-                     </div>`,
-        'create': (index, data) => {
-            var t = {...component_extra_offsets};
-            t.id = component_extra_offsets.id+index
-            t.index = index
-            t.template = component_extra_offsets.template.replaceAll("##index##", index).replaceAll('##id##', t.id)
-            t.obj = $(ons.createElement(t.template))
-            t.list = t.obj.find('div[name="extra_list"]')
-            t.empty = t.obj.find('div[name="extra_empty"]')
-            t.children = []
-            t.rebuild = (extras) => {
-                t.list.empty()
-                t.children = []
-                extra_value_map[t.index] = []
-                if (!Array.isArray(extras)) {
-                    extras = []
-                }
-                extras.forEach((extra, extra_index) => {
-                    var item = component_extra_offset.create(t.index, extra_index, extra)
-                    t.children.push(item)
-                    t.list.append(item.obj)
-                })
-                if (extras.length === 0) {
-                    t.empty.show()
-                } else {
-                    t.empty.hide()
-                }
-            }
-            t.update_values = (values) => {
-                if (!Array.isArray(values)) {
-                    return
-                }
-                if (!extra_value_map[t.index]) {
-                    extra_value_map[t.index] = []
-                }
-                values.forEach((value, extra_index) => {
-                    extra_value_map[t.index][extra_index] = value
-                    if (t.children[extra_index]) {
-                        t.children[extra_index].update_value(value)
-                    }
-                })
-            }
-            var extras = (data && data.ExtraOffsets) ? data.ExtraOffsets : []
-            t.rebuild(extras)
-            return t
-        },
-        'children': []
-    }
-
     var component_extra_offset = {
         'id': 'extra_offset_item_',
         'obj': undefined,
@@ -1467,6 +1452,10 @@
         },
         'children': [],
         'update_value': function(result) {
+            if (!extra_value_map[this.index]) {
+                extra_value_map[this.index] = []
+            }
+            extra_value_map[this.index][this.extra_index] = result || {}
             if (has(result, 'Value')) {
                 var display = result.Value.Display
                 if (!($(':focus')[0] && $(':focus')[0].id === this.value_obj.attr('id'))) {
@@ -1727,6 +1716,30 @@
             input.val(input.val().toUpperCase())
             component_extra_dialog.validate()
         }
+    }
+
+    function set_extra_components(index, comp, extras) {
+        if (!comp) {
+            return
+        }
+        if (!Array.isArray(comp.extra_components)) {
+            comp.extra_components = []
+        }
+        comp.extra_components.forEach((extraComp) => {
+            extraComp.obj.remove()
+        })
+        comp.extra_components = []
+        extra_value_map[index] = []
+        if (!Array.isArray(extras) || extras.length === 0) {
+            return
+        }
+        var insertTarget = comp.obj
+        extras.forEach((extra, extraIndex) => {
+            var extraComp = component_extra_offset.create(index, extraIndex, extra)
+            insertTarget.after(extraComp.obj)
+            insertTarget = extraComp.obj
+            comp.extra_components.push(extraComp)
+        })
     }
     window.component_extra_dialog = component_extra_dialog
     var component_code_dialog = {

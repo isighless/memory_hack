@@ -82,18 +82,10 @@ label,
 .field-label label {
   font-weight: inherit;
 }
-.extra-offsets-container {
-  margin-top: 12px;
-}
-.extra-offsets-header {
-  align-items: center;
-}
-.extra-offsets-header .extra-offsets-title {
-  font-weight: 600;
-}
 .extra-offset-item {
   padding-left: 0;
   padding-right: 0;
+  margin-left: 16px;
 }
 .extra-offset-content {
   width: 100%;
@@ -134,10 +126,4 @@ label,
 }
 .extra-offset-meta span {
   display: inline-block;
-}
-.extra-offsets-empty {
-  display: none;
-  margin-top: 6px;
-  font-size: 12px;
-  color: #888;
 }
