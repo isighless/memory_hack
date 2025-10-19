@@ -161,7 +161,7 @@
     }
 
     codelist.extra_add = function(index) {
-        component_extra_dialog.create({ 'mode': 'add', 'index': index })
+        component_extra_dialog.create({ 'mode': 'add', 'index': index, 'base_offset': code_data[index]['Offset'] })
     }
 
     codelist.extra_edit = function(index, extra_index) {
@@ -176,7 +176,8 @@
             'name': extra.Name,
             'offset': extra.Offset,
             'type': extra.Type,
-            'signed': extra.Signed
+            'signed': extra.Signed,
+            'base_offset': code_data[index]['Offset']
         })
     }
 
@@ -1590,18 +1591,29 @@
         'mode': 'add',
         'index': -1,
         'extra_index': -1,
+        'base_offset': '0',
         'setup': (data) => {
             component_extra_dialog.mode = data.mode
             component_extra_dialog.index = data.index
             component_extra_dialog.extra_index = has(data, 'extra_index') ? data.extra_index : -1
-            var title = component_extra_dialog.mode === 'edit' ? 'Edit Extra Offset' : 'Add Extra Offset'
-            component_extra_dialog.obj.find('.extra-offset-dialog-title').text(title)
+            component_extra_dialog.base_offset = has(data, 'base_offset') ? data.base_offset : '0'
+            if (component_extra_dialog.base_offset === undefined || component_extra_dialog.base_offset === null) {
+                component_extra_dialog.base_offset = '0'
+            }
+            component_extra_dialog.base_offset = component_extra_dialog.base_offset.toString().toUpperCase()
+            component_extra_dialog.obj.find('.extra-offset-dialog-title').text(component_extra_dialog.mode === 'edit' ? 'Edit Extra Offset' : 'Add Extra Offset')
             var name = has(data, 'name') ? data.name : 'Extra Offset'
-            var offset = has(data, 'offset') ? data.offset : '0'
+            var offset = has(data, 'offset') ? data.offset.toString().toUpperCase() : ''
             var type = has(data, 'type') ? data.type : 'byte_4'
             $('#extra_offset_name').val(name)
-            $('#extra_offset_value').val(offset)
             $('#extra_offset_type').val(type)
+            $('#extra_offset_base_display').text(component_extra_dialog.base_offset)
+            $('#extra_offset_relative').val('')
+            $('#extra_offset_value').val(offset)
+            if (offset) {
+                var relative = component_extra_dialog.format_hex(component_extra_dialog.parse_hex(offset) - component_extra_dialog.parse_hex(component_extra_dialog.base_offset))
+                $('#extra_offset_relative').val(relative)
+            }
             component_extra_dialog.validate()
         },
         'create': (data) => {
@@ -1618,8 +1630,21 @@
             }
         },
         'validate': () => {
-            var offset = $('#extra_offset_value').val()
-            if (/^-?[0-9A-F]{1,12}$/i.test(offset)) {
+            var offsetInput = $('#extra_offset_value')
+            var relativeInput = $('#extra_offset_relative')
+            var offset = offsetInput.val().trim().toUpperCase()
+            var relative = relativeInput.val().trim().toUpperCase()
+            offsetInput.val(offset)
+            relativeInput.val(relative)
+            var pattern = /^-?[0-9A-F]{1,12}$/i
+            var offsetValid = offset.length > 0 && pattern.test(offset)
+            var relativeValid = relative.length > 0 && pattern.test(relative)
+            if (relativeValid) {
+                var computed = component_extra_dialog.format_hex(component_extra_dialog.parse_hex(component_extra_dialog.base_offset) + component_extra_dialog.parse_hex(relative))
+                offsetInput.val(computed)
+                offsetValid = true
+            }
+            if (offsetValid || relativeValid) {
                 $('#extra_offset_save_button').removeAttr('disabled')
             } else {
                 $('#extra_offset_save_button').attr('disabled', 'disabled')
@@ -1631,11 +1656,24 @@
             }
         },
         'on_submit': () => {
+            var name = $('#extra_offset_name').val()
+            var type = $('#extra_offset_type').val()
+            var offsetInput = $('#extra_offset_value').val().trim().toUpperCase()
+            var relativeInput = $('#extra_offset_relative').val().trim().toUpperCase()
+            var pattern = /^-?[0-9A-F]{1,12}$/i
+            var final_offset = offsetInput
+            if (relativeInput.length > 0 && pattern.test(relativeInput)) {
+                var absoluteValue = component_extra_dialog.parse_hex(component_extra_dialog.base_offset) + component_extra_dialog.parse_hex(relativeInput)
+                final_offset = component_extra_dialog.format_hex(absoluteValue)
+            } else if (!pattern.test(offsetInput)) {
+                $('#extra_offset_save_button').attr('disabled', 'disabled')
+                return
+            }
             var payload = {
                 'index': component_extra_dialog.index,
-                'name': $('#extra_offset_name').val(),
-                'offset': $('#extra_offset_value').val().toUpperCase(),
-                'type': $('#extra_offset_type').val()
+                'name': name,
+                'offset': final_offset,
+                'type': type
             }
             if (component_extra_dialog.mode === 'edit') {
                 payload['command'] = 'CODELIST_UPDATE_EXTRA_OFFSET'
@@ -1645,6 +1683,49 @@
             }
             $.send('/codelist', payload, on_codelist_status)
             component_extra_dialog.obj[0].hide()
+        },
+        'parse_hex': (value) => {
+            if (value === undefined || value === null) {
+                return 0
+            }
+            var str = value.toString().trim()
+            if (str.length === 0) {
+                return 0
+            }
+            var negative = str.startsWith('-')
+            if (negative) {
+                str = str.substring(1)
+            }
+            if (str.length === 0) {
+                return 0
+            }
+            var parsed = parseInt(str, 16)
+            if (isNaN(parsed)) {
+                return 0
+            }
+            return negative ? -parsed : parsed
+        },
+        'format_hex': (value) => {
+            if (!Number.isFinite(value)) {
+                return '0'
+            }
+            var absValue = Math.abs(value)
+            var hex = absValue.toString(16).toUpperCase()
+            if (hex.length === 0) {
+                hex = '0'
+            }
+            return value < 0 ? '-' + hex : hex
+        },
+        'on_absolute_input': () => {
+            var input = $('#extra_offset_value')
+            input.val(input.val().toUpperCase())
+            $('#extra_offset_relative').val('')
+            component_extra_dialog.validate()
+        },
+        'on_relative_input': () => {
+            var input = $('#extra_offset_relative')
+            input.val(input.val().toUpperCase())
+            component_extra_dialog.validate()
         }
     }
     window.component_extra_dialog = component_extra_dialog

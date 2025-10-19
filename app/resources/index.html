@@ -391,7 +391,13 @@ div .input_item{
       <ons-row style="margin-top:10px;">
         <ons-col width="100%" class="col ons-col-inner">
           <label class="field-label" for="extra_offset_value">Offset</label>
-          <input type="text" id="extra_offset_value" class="text-input text-input--material text-full" oninput="component_extra_dialog.validate()" autocomplete="chrome-off" autocapitalize="off">
+          <input type="text" id="extra_offset_value" class="text-input text-input--material text-full" oninput="component_extra_dialog.on_absolute_input()" autocomplete="chrome-off" autocapitalize="off">
+        </ons-col>
+      </ons-row>
+      <ons-row style="margin-top:10px;">
+        <ons-col width="100%" class="col ons-col-inner">
+          <label class="field-label" for="extra_offset_relative">Relative Offset (Main Offset: <span id="extra_offset_base_display">0</span>)</label>
+          <input type="text" id="extra_offset_relative" class="text-input text-input--material text-full" oninput="component_extra_dialog.on_relative_input()" autocomplete="chrome-off" autocapitalize="off">
         </ons-col>
       </ons-row>
       <ons-row style="margin-top:10px;">
