@@ -221,14 +221,25 @@
 
     codelist.code_menu_clicked = function(ele, index) {
         ons.createElement('code_menu', { append: true }).then(function(popover) {
-
+            var source = code_data[index]['Source']
             items = $(popover).find('ons-list-item')
             for (i=0; i<items.length; i++) {
                 var item = items[i]
-                if (item.getAttribute("name") === 'address_to_aob' && document.clipboard.has_address() && !document.clipboard.has_pointer() && aob_resolve_map.hasOwnProperty(index) && aob_resolve_map[index].hasOwnProperty('Addresses') && aob_resolve_map[index]['Addresses'].length > 0) {
-                    $(item).removeClass('hidden')
+                var name = item.getAttribute("name")
+                if (name === 'address_to_aob') {
+                    if (document.clipboard.has_address() && !document.clipboard.has_pointer() && aob_resolve_map.hasOwnProperty(index) && aob_resolve_map[index].hasOwnProperty('Addresses') && aob_resolve_map[index]['Addresses'].length > 0) {
+                        $(item).removeClass('hidden')
+                    } else {
+                        $(item).addClass('hidden')
+                    }
+                } else if (name === 'extra_add') {
+                    if (source === 'aob') {
+                        $(item).removeClass('hidden')
+                    } else {
+                        $(item).addClass('hidden')
+                    }
                 }
-                $(item).bind('click', {list_id: item.getAttribute("name"), code_index: index}, (event) => {codelist.option_clicked(event.data.list_id, event.data.code_index); popover.hide()})
+                $(item).bind('click', {list_id: name, code_index: index}, (event) => {codelist.option_clicked(event.data.list_id, event.data.code_index); popover.hide()})
             }
             popover.show("#"+ele.id);
         });
@@ -287,6 +298,9 @@
                               'index': code_index}
 
                 $.send('/codelist', cmd, on_codelist_status);
+                break
+            case 'extra_add':
+                codelist.extra_add(code_index)
                 break
             case 'rebase':
                 var source = code_data[code_index]['Source']
@@ -1322,14 +1336,12 @@
         'update': (_this) => {},
         'template': `<div id="##id##" class="extra-offsets-container">
                         <ons-row class="extra-offsets-header">
-                            <ons-col width="70%" class="col ons-col-inner">
+                            <ons-col class="col ons-col-inner">
                                 <span class="extra-offsets-title">Extra Offsets</span>
-                            </ons-col>
-                            <ons-col width="30%" class="col ons-col-inner" align="right">
-                                <ons-button modifier="quiet" onclick="codelist.extra_add(##index##)"><ons-icon icon="md-plus"></ons-icon></ons-button>
                             </ons-col>
                         </ons-row>
                         <div class="extra-offsets-list" name="extra_list"></div>
+                        <div class="extra-offsets-empty" name="extra_empty">No extra offsets added yet.</div>
                      </div>`,
         'create': (index, data) => {
             var t = {...component_extra_offsets};
@@ -1338,6 +1350,7 @@
             t.template = component_extra_offsets.template.replaceAll("##index##", index).replaceAll('##id##', t.id)
             t.obj = $(ons.createElement(t.template))
             t.list = t.obj.find('div[name="extra_list"]')
+            t.empty = t.obj.find('div[name="extra_empty"]')
             t.children = []
             t.rebuild = (extras) => {
                 t.list.empty()
@@ -1351,6 +1364,11 @@
                     t.children.push(item)
                     t.list.append(item.obj)
                 })
+                if (extras.length === 0) {
+                    t.empty.show()
+                } else {
+                    t.empty.hide()
+                }
             }
             t.update_values = (values) => {
                 if (!Array.isArray(values)) {
