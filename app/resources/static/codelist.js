@@ -12,6 +12,7 @@
     var aob_resolve_map = {}
     var pointer_resolve_map = {}
     var value_map = {}
+    var extra_value_map = {}
 
     //public vars
     codelist.updater = null
@@ -105,34 +106,50 @@
         }
     }
 
-    codelist.code_value_changed = function(did_blur, ele, index) {
+    codelist.code_value_changed = function(did_blur, ele, index, extra_index) {
         event.stopPropagation()
         if (!did_blur) {
             if(event.key === 'Enter' || event.key === 'Return'  || event.keyCode == 13) {
                 ele.blur()
             }
         } else {
-            $.send('/codelist', {'command': 'CODELIST_WRITE', 'index': index, 'value': ele.value}, on_codelist_status)
+            var payload = {'command': 'CODELIST_WRITE', 'index': index, 'value': ele.value}
+            if (extra_index !== undefined && extra_index !== null) {
+                payload['extra_index'] = extra_index
+            }
+            $.send('/codelist', payload, on_codelist_status)
         }
     }
 
-    codelist.code_name_changed = function(did_blur, ele, index) {
+    codelist.code_name_changed = function(did_blur, ele, index, extra_index) {
         if (!did_blur) {
             if(event.key === 'Enter' || event.key === 'Return'  || event.keyCode === 13) {
                 ele.blur()
             }
         }
         else {
-            $.send('/codelist', {'command': 'CODELIST_NAME', 'index': index, 'name': ele.value}, on_codelist_status)
+            var payload = {'command': 'CODELIST_NAME', 'index': index, 'name': ele.value}
+            if (extra_index !== undefined && extra_index !== null) {
+                payload['extra_index'] = extra_index
+            }
+            $.send('/codelist', payload, on_codelist_status)
         }
     }
 
-    codelist.code_size_changed = function(ele, index) {
-        $.send('/codelist', { 'command': "CODELIST_SIZE", 'index': index, 'size': ele.value}, on_codelist_status);
+    codelist.code_size_changed = function(ele, index, extra_index) {
+        var payload = { 'command': "CODELIST_SIZE", 'index': index, 'size': ele.value}
+        if (extra_index !== undefined && extra_index !== null) {
+            payload['extra_index'] = extra_index
+        }
+        $.send('/codelist', payload, on_codelist_status);
     }
 
-    codelist.code_freeze_changed = function(ele, index) {
-        $.send('/codelist', { 'command': "CODELIST_FREEZE", 'index': index, 'freeze': ele.checked}, function(result) {
+    codelist.code_freeze_changed = function(ele, index, extra_index) {
+        var payload = { 'command': "CODELIST_FREEZE", 'index': index, 'freeze': ele.checked}
+        if (extra_index !== undefined && extra_index !== null) {
+            payload['extra_index'] = extra_index
+        }
+        $.send('/codelist', payload, function(result) {
             var st = result.frozen.set
             $(ele).prop("checked", st);
             on_codelist_status(result)
@@ -141,6 +158,64 @@
 
     codelist.on_refresh = function(element, index) {
         $.send('/codelist', { 'command': "CODELIST_REFRESH", 'index': index}, on_codelist_status);
+    }
+
+    codelist.extra_add = function(index) {
+        component_extra_dialog.create({ 'mode': 'add', 'index': index })
+    }
+
+    codelist.extra_edit = function(index, extra_index) {
+        if (!has(code_data, index.toString()) || !has(code_data[index], 'ExtraOffsets')) {
+            return
+        }
+        var extra = code_data[index].ExtraOffsets[extra_index]
+        component_extra_dialog.create({
+            'mode': 'edit',
+            'index': index,
+            'extra_index': extra_index,
+            'name': extra.Name,
+            'offset': extra.Offset,
+            'type': extra.Type,
+            'signed': extra.Signed
+        })
+    }
+
+    codelist.extra_delete = function(index, extra_index) {
+        $.send('/codelist', { 'command': "CODELIST_DELETE_CODE", 'index': index, 'extra_index': extra_index}, on_codelist_status);
+    }
+
+    codelist.extra_copy = function(index, extra_index) {
+        if (!has(code_data, index.toString()) || !has(code_data[index], 'ExtraOffsets')) {
+            return
+        }
+        var extra = code_data[index].ExtraOffsets[extra_index]
+        var data = { 'aob': code_data[index]['AOB'], 'offset': extra.Offset }
+        var extra_results = extra_value_map[index]
+        var selected = has(code_data[index], 'Selected') ? code_data[index].Selected : -1
+        if (extra_results && extra_results[extra_index] && has(extra_results[extra_index], 'Value')) {
+            data['value'] = extra_results[extra_index]['Value']
+        }
+        if (extra_results && extra_results[extra_index] && has(extra_results[extra_index], 'Addresses')) {
+            var addresses = extra_results[extra_index]['Addresses']['Actual']
+            if (addresses && addresses.length > 0) {
+                if (selected >= 0 && selected < addresses.length) {
+                    data['address'] = addresses[selected]
+                } else {
+                    data['address'] = addresses[0]
+                }
+            }
+        }
+        if (!has(data, 'address') && has(aob_resolve_map, index.toString())) {
+            var addresses = aob_resolve_map[index]['Addresses']
+            if (addresses && addresses.length > 0) {
+                if (selected >=0 && selected < addresses.length) {
+                    data['address'] = addresses[selected]
+                } else {
+                    data['address'] = addresses[0]
+                }
+            }
+        }
+        document.clipboard.copy(data)
     }
 
 
@@ -590,6 +665,7 @@
                 aob_resolve_map = {}
                 pointer_resolve_map = {}
                 value_map = {}
+                extra_value_map = {}
                 $.each(result.results, ( id, res ) => {
                     var index = _this.children.findIndex((item) => {return item[0].id == component_code_header.id+id})
                     _this.children[index][0].setup(res, _this.children[index][0])
@@ -726,6 +802,7 @@
             } else {
                 t.children.push(component_row_aob.create(index))
                 t.children.push(component_row_offset.create(index))
+                t.children.push(component_extra_offsets.create(index, data))
             }
             t.children.forEach((item, index) =>{
                 if (index == 0) {
@@ -1230,6 +1307,181 @@
         }
     }
 
+    var component_extra_offsets = {
+        'id': 'extra_offsets_',
+        'obj': undefined,
+        'index': -1,
+        'setup': (result, _this) => {
+            if (has(result, 'ExtraOffsets')) {
+                _this.rebuild(result.ExtraOffsets)
+            }
+            if (has(result, 'Extras')) {
+                _this.update_values(result.Extras)
+            }
+        },
+        'update': (_this) => {},
+        'template': `<div id="##id##" class="extra-offsets-container">
+                        <ons-row class="extra-offsets-header">
+                            <ons-col width="70%" class="col ons-col-inner">
+                                <span class="extra-offsets-title">Extra Offsets</span>
+                            </ons-col>
+                            <ons-col width="30%" class="col ons-col-inner" align="right">
+                                <ons-button modifier="quiet" onclick="codelist.extra_add(##index##)"><ons-icon icon="md-plus"></ons-icon></ons-button>
+                            </ons-col>
+                        </ons-row>
+                        <div class="extra-offsets-list" name="extra_list"></div>
+                     </div>`,
+        'create': (index, data) => {
+            var t = {...component_extra_offsets};
+            t.id = component_extra_offsets.id+index
+            t.index = index
+            t.template = component_extra_offsets.template.replaceAll("##index##", index).replaceAll('##id##', t.id)
+            t.obj = $(ons.createElement(t.template))
+            t.list = t.obj.find('div[name="extra_list"]')
+            t.children = []
+            t.rebuild = (extras) => {
+                t.list.empty()
+                t.children = []
+                extra_value_map[t.index] = []
+                if (!Array.isArray(extras)) {
+                    extras = []
+                }
+                extras.forEach((extra, extra_index) => {
+                    var item = component_extra_offset.create(t.index, extra_index, extra)
+                    t.children.push(item)
+                    t.list.append(item.obj)
+                })
+            }
+            t.update_values = (values) => {
+                if (!Array.isArray(values)) {
+                    return
+                }
+                if (!extra_value_map[t.index]) {
+                    extra_value_map[t.index] = []
+                }
+                values.forEach((value, extra_index) => {
+                    extra_value_map[t.index][extra_index] = value
+                    if (t.children[extra_index]) {
+                        t.children[extra_index].update_value(value)
+                    }
+                })
+            }
+            var extras = (data && data.ExtraOffsets) ? data.ExtraOffsets : []
+            t.rebuild(extras)
+            return t
+        },
+        'children': []
+    }
+
+    var component_extra_offset = {
+        'id': 'extra_offset_item_',
+        'obj': undefined,
+        'index': -1,
+        'extra_index': -1,
+        'setup': (result, _this) => {},
+        'update': (_this) => {},
+        'template': `<ons-list-item modifier="nodivider" class="extra-offset-item" id="##id##">
+                        <div class="extra-offset-content">
+                            <div class="extra-offset-header">
+                                <input tabIndex="-1" type="text" id="extra_name_##index##_##extra##" class="text-input text-input--material text-full extra-offset-name" onkeydown="codelist.code_name_changed(false, this, ##index##, ##extra##)" onblur="codelist.code_name_changed(true, this, ##index##, ##extra##)" autocomplete="chrome-off" autocapitalize="off">
+                                <div class="extra-offset-actions">
+                                    <ons-button modifier="quiet" onclick="codelist.extra_edit(##index##, ##extra##)"><ons-icon icon="md-edit"></ons-icon></ons-button>
+                                    <ons-button modifier="quiet" onclick="codelist.extra_delete(##index##, ##extra##)"><ons-icon icon="md-delete"></ons-icon></ons-button>
+                                </div>
+                            </div>
+                            <div class="extra-offset-controls">
+                                <select class="select-input select-input--material extra-offset-type" onchange="codelist.code_size_changed(this, ##index##, ##extra##)">
+                                    <option value="byte_1">BYTE</option>
+                                    <option value="byte_2">2 BYTES</option>
+                                    <option value="byte_4">4 BYTES</option>
+                                    <option value="byte_8">8 BYTES</option>
+                                    <option value="float">FLOAT</option>
+                                </select>
+                                <input tabIndex="-1" inputmode="decimal" autocomplete="chrome-off" type="text" id="extra_value_##index##_##extra##" class="text-input text-input--material text-full extra-offset-value" onkeydown="codelist.code_value_changed(false, this, ##index##, ##extra##)" onblur="codelist.code_value_changed(true, this, ##index##, ##extra##)">
+                                <label class="checkbox checkbox--material extra-offset-freeze">
+                                    <input tabIndex="-1" id="extra_freeze_##index##_##extra##" type="checkbox" class="checkbox__input checkbox--material__input" onchange="codelist.code_freeze_changed(this, ##index##, ##extra##)">
+                                    <div class="checkbox__checkmark checkbox--material__checkmark"></div>
+                                </label>
+                                <ons-button modifier="quiet" onclick="codelist.extra_copy(##index##, ##extra##)"><ons-icon icon="md-copy"></ons-icon></ons-button>
+                            </div>
+                            <div class="extra-offset-meta">
+                                <span class="extra-offset-meta-offset">Offset: <span class="extra-offset-value-text">0</span></span>
+                                <span class="extra-offset-meta-address">Address: <span class="extra-offset-address-text">????????</span></span>
+                            </div>
+                        </div>
+                     </ons-list-item>`,
+        'create': (index, extra_index, data) => {
+            var t = {...component_extra_offset};
+            t.id = component_extra_offset.id+index+'_'+extra_index
+            t.index = index
+            t.extra_index = extra_index
+            t.template = component_extra_offset.template.replaceAll('##id##', t.id).replaceAll('##index##', index).replaceAll('##extra##', extra_index)
+            t.obj = $(ons.createElement(t.template))
+            t.name_obj = t.obj.find('.extra-offset-name')
+            t.type_obj = t.obj.find('.extra-offset-type')
+            t.value_obj = t.obj.find('.extra-offset-value')
+            t.freeze_checkbox = t.obj.find('.extra-offset-freeze').find('input')
+            t.offset_label = t.obj.find('.extra-offset-value-text')
+            t.address_label = t.obj.find('.extra-offset-address-text')
+            var name = data.Name || ('Extra Offset #'+(extra_index+1))
+            t.name_obj.val(name)
+            t.name_obj.on('click', function(){ this.select(); event.stopPropagation(); })
+            t.type_obj.val(data.Type || 'byte_4')
+            var displayValue = (data.Value && data.Value.Display) ? data.Value.Display : '??'
+            t.value_obj.val(displayValue)
+            if (displayValue.startsWith('?')) {
+                t.value_obj.attr('disabled', 'disabled')
+            } else {
+                t.value_obj.removeAttr('disabled')
+            }
+            t.freeze_checkbox.prop('checked', data.Freeze === true)
+            if (displayValue.startsWith('?') && !t.freeze_checkbox.prop('checked')) {
+                t.freeze_checkbox.attr('disabled', 'disabled')
+            }
+            t.offset_label.text(data.Offset || '0')
+            t.address_label.text('????????')
+            t.type_obj.on('click', function(){ event.stopPropagation(); })
+            t.value_obj.on('click', function(){ this.select(); event.stopPropagation(); })
+            t.freeze_checkbox.on('click', function(){ event.stopPropagation(); })
+            t.obj.find('ons-button').on('click', function(){ event.stopPropagation(); })
+            return t
+        },
+        'children': [],
+        'update_value': function(result) {
+            if (has(result, 'Value')) {
+                var display = result.Value.Display
+                if (!($(':focus')[0] && $(':focus')[0].id === this.value_obj.attr('id'))) {
+                    this.value_obj.val(display)
+                }
+                if (display && display.startsWith('?')) {
+                    this.value_obj.attr('disabled', 'disabled')
+                    if (!this.freeze_checkbox.prop('checked')) {
+                        this.freeze_checkbox.attr('disabled', 'disabled')
+                    }
+                } else {
+                    this.value_obj.removeAttr('disabled')
+                    this.freeze_checkbox.removeAttr('disabled')
+                }
+            }
+            if (has(result, 'Addresses')) {
+                var addresses = result.Addresses.Display
+                if (addresses && addresses.length > 0) {
+                    var selected = -1
+                    if (has(code_data, this.index.toString()) && has(code_data[this.index], 'Selected')) {
+                        selected = code_data[this.index].Selected
+                    }
+                    var displayAddress = addresses[0]
+                    if (selected >= 0 && selected < addresses.length) {
+                        displayAddress = addresses[selected]
+                    }
+                    this.address_label.text(displayAddress)
+                } else {
+                    this.address_label.text('????????')
+                }
+            }
+        }
+    }
+
     var component_row_offsets = {
         'id': 'row_offsets_',
         'obj': undefined,
@@ -1314,6 +1566,70 @@
     }
 
 
+    var component_extra_dialog = {
+        'id': 'extra_offset_dialog',
+        'obj': undefined,
+        'mode': 'add',
+        'index': -1,
+        'extra_index': -1,
+        'setup': (data) => {
+            component_extra_dialog.mode = data.mode
+            component_extra_dialog.index = data.index
+            component_extra_dialog.extra_index = has(data, 'extra_index') ? data.extra_index : -1
+            var title = component_extra_dialog.mode === 'edit' ? 'Edit Extra Offset' : 'Add Extra Offset'
+            component_extra_dialog.obj.find('.extra-offset-dialog-title').text(title)
+            var name = has(data, 'name') ? data.name : 'Extra Offset'
+            var offset = has(data, 'offset') ? data.offset : '0'
+            var type = has(data, 'type') ? data.type : 'byte_4'
+            $('#extra_offset_name').val(name)
+            $('#extra_offset_value').val(offset)
+            $('#extra_offset_type').val(type)
+            component_extra_dialog.validate()
+        },
+        'create': (data) => {
+            if (component_extra_dialog.obj === undefined) {
+                ons.createElement('extra_offset', { append: true })
+                .then(function(dialog) {
+                    component_extra_dialog.obj = $(dialog)
+                    component_extra_dialog.setup(data)
+                    dialog.show()
+                })
+            } else {
+                component_extra_dialog.setup(data)
+                component_extra_dialog.obj[0].show()
+            }
+        },
+        'validate': () => {
+            var offset = $('#extra_offset_value').val()
+            if (/^-?[0-9A-F]{1,12}$/i.test(offset)) {
+                $('#extra_offset_save_button').removeAttr('disabled')
+            } else {
+                $('#extra_offset_save_button').attr('disabled', 'disabled')
+            }
+        },
+        'on_cancel': () => {
+            if (component_extra_dialog.obj) {
+                component_extra_dialog.obj[0].hide()
+            }
+        },
+        'on_submit': () => {
+            var payload = {
+                'index': component_extra_dialog.index,
+                'name': $('#extra_offset_name').val(),
+                'offset': $('#extra_offset_value').val().toUpperCase(),
+                'type': $('#extra_offset_type').val()
+            }
+            if (component_extra_dialog.mode === 'edit') {
+                payload['command'] = 'CODELIST_UPDATE_EXTRA_OFFSET'
+                payload['extra_index'] = component_extra_dialog.extra_index
+            } else {
+                payload['command'] = 'CODELIST_ADD_EXTRA_OFFSET'
+            }
+            $.send('/codelist', payload, on_codelist_status)
+            component_extra_dialog.obj[0].hide()
+        }
+    }
+    window.component_extra_dialog = component_extra_dialog
     var component_code_dialog = {
         'id': 'add_code_dialog',
         'obj': undefined,

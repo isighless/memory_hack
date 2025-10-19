@@ -50,6 +50,8 @@ class CodeList(MemoryHandler):
             "CODELIST_UPLOAD": self.handle_upload,
             "CODELIST_REBASE_CODE": self.handle_rebase,
             "CODELIST_SORT": self.handle_sort,
+            "CODELIST_ADD_EXTRA_OFFSET": self.handle_add_extra_offset,
+            "CODELIST_UPDATE_EXTRA_OFFSET": self.handle_update_extra_offset,
         }
         self.update_thread: Thread = None
         self.update_event: Event = None
@@ -100,6 +102,40 @@ class CodeList(MemoryHandler):
         self.freeze_map.clear()
         self.component_index = 0
 
+    @staticmethod
+    def _freeze_key(index: int, extra_index: int | None = None):
+        return (index, extra_index)
+
+    @staticmethod
+    def _parse_index(value) -> int:
+        if isinstance(value, int):
+            return value
+        return int(str(value), 10)
+
+    @staticmethod
+    def _parse_extra_index(value) -> int | None:
+        if value is None or value == '' or value == '_null':
+            return None
+        return CodeList._parse_index(value)
+
+    def _resolve_target(self, index_raw, extra_index_raw=None):
+        index = CodeList._parse_index(index_raw)
+        if index not in self.code_data:
+            raise CodelistException("Can't write code that isn't in the list")
+        code = self.code_data[index]
+        extras = code.setdefault('ExtraOffsets', [])
+        extra_index = CodeList._parse_extra_index(extra_index_raw)
+        if extra_index is None:
+            return index, None, code, code
+        if extra_index < 0 or extra_index >= len(extras):
+            raise CodelistException("Can't find the requested extra offset")
+        return index, extra_index, code, extras[extra_index]
+
+    def _clear_freeze_entries(self, index: int):
+        keys = [key for key in list(self.freeze_map.keys()) if key[0] == index]
+        for key in keys:
+            del self.freeze_map[key]
+
 
     def html_main(self):
         return DynamicHTML('resources/codelist.html', 1).get_html()
@@ -119,53 +155,66 @@ class CodeList(MemoryHandler):
                 resp.media['results'] = self.get_results()
 
     def handle_write(self, req: Request, resp: Response):
-        index = int(req.media['index'])
-        if index not in self.code_data:
-            raise CodelistException("Can't write code that isn't in the list")
-        code = self.code_data[index]
+        index, extra_index, parent_code, target = self._resolve_target(req.media['index'], req.media.get('extra_index'))
         try:
-            b = self.determine_value(req.media['value'], code)
+            b = self.determine_value(req.media['value'], target)
         except ValueError:
             raise CodelistException("Could not write that value")
-        if index in self.freeze_map:
+        key = CodeList._freeze_key(index, extra_index)
+        if key in self.freeze_map:
             with self.update_lock:
-                self.freeze_map[index]['value'] = b
+                self.freeze_map[key]['value'] = b
             return
-        if code['Source'] == 'address':
+        if extra_index is None and parent_code['Source'] == 'address':
             with self.update_lock:
-                addr = self.base_converter.convert(self.mem(), code['Address'])
+                addr = self.base_converter.convert(self.mem(), parent_code['Address'])
                 self.mem().write_memory(addr, b)
-        elif code['Source'] == 'pointer':
+        elif extra_index is None and parent_code['Source'] == 'pointer':
             with self.update_lock:
-                if 'Resolved' in code and code['Resolved'] > 0:
-                    self.mem().write_memory(code['Resolved'], b)
+                if 'Resolved' in parent_code and parent_code['Resolved'] > 0:
+                    self.mem().write_memory(parent_code['Resolved'], b)
         else:
-            if code['AOB'] not in self.aob_map:
+            aob_code = parent_code if extra_index is None else parent_code
+            if aob_code['AOB'] not in self.aob_map:
                 raise CodelistException('Could not write AOB value because it cannot be found')
             with self.update_lock:
-                for base in self.aob_map[code['AOB']].get_bases():
-                    self.mem().write_memory(base+int(code['Offset'], 16), b)
+                offset_value = int(target['Offset'], 16)
+                for base in self.aob_map[aob_code['AOB']].get_bases():
+                    self.mem().write_memory(base + offset_value, b)
 
     def handle_freeze(self, req: Request, resp: Response):
-        frozen = req.media['freeze'] == 'true'
-        index = int(req.media['index'])
+        freeze_value = req.media['freeze']
+        frozen = freeze_value if isinstance(freeze_value, bool) else str(freeze_value).lower() == 'true'
+        index, extra_index, parent_code, target = self._resolve_target(req.media['index'], req.media.get('extra_index'))
         resp.media['frozen'] = {'index': index}
-        if index not in self.code_data:
-            raise CodelistException("Can't write code that isn't in the list")
+        if extra_index is not None:
+            resp.media['frozen']['extra_index'] = extra_index
         with self.update_lock:
-            value = copy.copy(self.get_results()[index])
-            if value['Value']['Actual'] is None:
+            results = self.get_results()
+            if index not in results:
                 resp.media['frozen']['set'] = False
                 return
-            code = self.code_data[index]
-            code['Freeze'] = frozen
+            value = copy.copy(results[index])
+            if extra_index is None:
+                actual_value = value.get('Value', {}).get('Actual')
+            else:
+                extras = value.get('Extras', [])
+                actual_value = None
+                if 0 <= extra_index < len(extras):
+                    actual_value = extras[extra_index].get('Value', {}).get('Actual')
+            if actual_value is None:
+                resp.media['frozen']['set'] = False
+                return
+            target['Freeze'] = frozen
+            key = CodeList._freeze_key(index, extra_index)
             if frozen:
-                dt = memory_utils.typeToCType[(code['Type'], code['Signed'])]
-                self.freeze_map[index] = {'value': dt(value['Value']['Actual']), 'index': index, 'code': code}
+                dt = memory_utils.typeToCType[(target['Type'], target['Signed'])]
+                self.freeze_map[key] = {'value': dt(actual_value), 'index': index, 'extra_index': extra_index,
+                                        'code': target, 'parent': parent_code if extra_index is not None else None}
                 resp.media['frozen']['set'] = True
             else:
-                if index in self.freeze_map:
-                    del self.freeze_map[index]
+                if key in self.freeze_map:
+                    del self.freeze_map[key]
                 resp.media['frozen']['set'] = False
         if not (self.freeze_thread and self.freeze_thread.is_alive()) and self.freeze_map:
             self.start_freezer()
@@ -175,31 +224,35 @@ class CodeList(MemoryHandler):
 
     def handle_size(self, req: Request, resp: Response):
         size = req.media['size']
-        index = int(req.media['index'])
-        if index not in self.code_data:
-            raise CodelistException("Can't write code that isn't in the list")
-        code = self.code_data[index]
+        index, extra_index, _, target = self._resolve_target(req.media['index'], req.media.get('extra_index'))
         with self.update_lock:
-            code['Type'] = size
-            if index in self.freeze_map:
-                value = memory_utils.limit(self.freeze_map[index]['value'].value, size)
-                self.freeze_map[index]['value'] = get_ctype(str(value), size)(value)
+            target['Type'] = size
+            key = CodeList._freeze_key(index, extra_index)
+            if key in self.freeze_map:
+                value = memory_utils.limit(self.freeze_map[key]['value'].value, size)
+                self.freeze_map[key]['value'] = get_ctype(str(value), size)(value)
 
     def handle_delete_code(self, req: Request, resp: Response):
-        index = int(req.media['index'])
-        if index not in self.code_data:
-            raise CodelistException("Can't write code that isn't in the list")
+        index, extra_index, parent_code, _ = self._resolve_target(req.media['index'], req.media.get('extra_index'))
         with self.update_lock:
-            if index in self.freeze_map:
-                del self.freeze_map[index]
-        self.process_delete(self.code_data[index], index)
-        try:
-            self.component_index = max(list(self.code_data.keys()))+1
-        except ValueError:
-            self.component_index = 0
-        if index in self.result_map:
-            del self.result_map[index]
-        resp.media['remove_index'] = index
+            key = CodeList._freeze_key(index, extra_index)
+            if key in self.freeze_map:
+                del self.freeze_map[key]
+            if extra_index is None:
+                self.process_delete(parent_code, index)
+                try:
+                    self.component_index = max(list(self.code_data.keys()))+1
+                except ValueError:
+                    self.component_index = 0
+                if index in self.result_map:
+                    del self.result_map[index]
+                resp.media['remove_index'] = index
+            else:
+                extras = parent_code.setdefault('ExtraOffsets', [])
+                if 0 <= extra_index < len(extras):
+                    extras.pop(extra_index)
+                resp.media['index'] = index
+                resp.media['edit_code'] = parent_code
 
     def handle_add_code(self, req: Request, resp: Response):
         tp = req.media['type']
@@ -230,9 +283,12 @@ class CodeList(MemoryHandler):
             if 'index' in req.media:
                 index = int(req.media['index'])
                 cd = self.code_data[index]
-                if index in self.freeze_map:
-                    del self.freeze_map[index]
-                    cd['Freeze'] = False
+                keys_to_remove = [key for key in list(self.freeze_map.keys()) if key[0] == index]
+                for key in keys_to_remove:
+                    del self.freeze_map[key]
+                cd['Freeze'] = False
+                for extra in cd.get('ExtraOffsets', []):
+                    extra['Freeze'] = False
                 if tp == 'address':
                     cd['Source'] = 'address'
                     cd['Address'] = req.media['address']
@@ -242,6 +298,8 @@ class CodeList(MemoryHandler):
                         del cd['Offset']
                     if 'Offsets' in cd:
                         del cd['Offsets']
+                    if 'ExtraOffsets' in cd:
+                        del cd['ExtraOffsets']
                     if 'Value' in cd:
                         del cd['Value']
                 elif tp == 'pointer':
@@ -253,12 +311,15 @@ class CodeList(MemoryHandler):
                         del cd['AOB']
                     if 'Offset' in cd:
                         del cd['Offset']
+                    if 'ExtraOffsets' in cd:
+                        del cd['ExtraOffsets']
                     if 'Value' in cd:
                         del cd['Value']
                 else:
                     cd['Source'] = 'aob'
                     cd['AOB'] = req.media['aob'].upper()
                     cd['Offset'] = req.media['offset'].upper()
+                    cd.setdefault('ExtraOffsets', [])
                     if 'Address' in cd:
                         del cd['Address']
                     if 'Value' in cd:
@@ -295,9 +356,56 @@ class CodeList(MemoryHandler):
                         "Freeze": False,
                         "Source": "aob",
                         "AOB": req.media['aob'].upper(),
-                        "Offset": req.media['offset'].upper()
+                        "Offset": req.media['offset'].upper(),
+                        "ExtraOffsets": []
                     }
                 self.process_add(self.code_data[index])
+
+    def handle_add_extra_offset(self, req: Request, resp: Response):
+        index = CodeList._parse_index(req.media['index'])
+        if index not in self.code_data:
+            raise CodelistException("Can't write code that isn't in the list")
+        code = self.code_data[index]
+        if code.get('Source') != 'aob':
+            raise CodelistException("Extra offsets only apply to AOB entries")
+        extras = code.setdefault('ExtraOffsets', [])
+        name = req.media.get('name', f"Extra Offset #{len(extras)+1}")
+        offset = str(req.media.get('offset', '0')).upper()
+        type_value = req.media.get('type', 'byte_4')
+        signed_value = req.media.get('signed', False)
+        if isinstance(signed_value, bool):
+            signed_flag = signed_value
+        else:
+            signed_flag = str(signed_value).lower() == 'true'
+        new_extra = {
+            "Name": name,
+            "Type": type_value,
+            "Signed": signed_flag,
+            "Freeze": False,
+            "Offset": offset,
+            "Value": {'Actual': None, 'Display': "??"}
+        }
+        extras.append(new_extra)
+        resp.media['index'] = index
+        resp.media['edit_code'] = self.code_data[index]
+
+    def handle_update_extra_offset(self, req: Request, resp: Response):
+        index, extra_index, parent_code, target = self._resolve_target(req.media['index'], req.media.get('extra_index'))
+        if parent_code.get('Source') != 'aob':
+            raise CodelistException("Extra offsets only apply to AOB entries")
+        if extra_index is None:
+            raise CodelistException("Missing extra offset index")
+        if 'offset' in req.media:
+            target['Offset'] = str(req.media['offset']).upper()
+        if 'type' in req.media:
+            target['Type'] = req.media['type']
+        if 'signed' in req.media:
+            signed_value = req.media['signed']
+            target['Signed'] = signed_value if isinstance(signed_value, bool) else str(signed_value).lower() == 'true'
+        if 'name' in req.media:
+            target['Name'] = req.media['name']
+        resp.media['index'] = index
+        resp.media['edit_code'] = self.code_data[index]
         if len(self.code_data) == 1:
             resp.media['file_data'] = self.code_data
             self.component_index = max(list(self.code_data.keys()))+1
@@ -329,9 +437,10 @@ class CodeList(MemoryHandler):
                     return
                 if index in self.result_map:
                     del self.result_map[index]
-                if index in self.freeze_map:
-                    del self.freeze_map[index]
-                    cd['Freeze'] = False
+                self._clear_freeze_entries(index)
+                cd['Freeze'] = False
+                for extra in cd.get('ExtraOffsets', []):
+                    extra['Freeze'] = False
                 if tp == 'address':
                     old_address = cd['Address']
                     new_address = req.media['address']
@@ -342,8 +451,9 @@ class CodeList(MemoryHandler):
                     for (_index, current_code) in [(_index, x) for (_index, x) in self.code_data.items() if x['Source'] == tp and x != cd]:
                         current_code['Address'] = '{:X}'.format(int(current_code['Address'], 16) + diff)
                         current_code['Freeze'] = False
-                        if _index in self.freeze_map:
-                            del self.freeze_map[_index]
+                        for extra in current_code.get('ExtraOffsets', []):
+                            extra['Freeze'] = False
+                        self._clear_freeze_entries(_index)
                         if _index in self.result_map:
                             del self.result_map[_index]
                         edit_list.append((_index, current_code))
@@ -366,8 +476,9 @@ class CodeList(MemoryHandler):
                         current_code['Offsets'] = ', '.join(['{:X}'.format(x) for x in offsets])
                         current_code['Resolved'] = '????????'
                         current_code['Freeze'] = False
-                        if _index in self.freeze_map:
-                            del self.freeze_map[_index]
+                        for extra in current_code.get('ExtraOffsets', []):
+                            extra['Freeze'] = False
+                        self._clear_freeze_entries(_index)
                         if _index in self.result_map:
                             del self.result_map[_index]
                         edit_list.append((_index, current_code))
@@ -385,8 +496,9 @@ class CodeList(MemoryHandler):
                         current_code['AOB'] = req.media['aob'].upper()
                         current_code['Offset'] = '{:X}'.format(int(current_code['Offset'], 16) + diff)
                         current_code['Freeze'] = False
-                        if _index in self.freeze_map:
-                            del self.freeze_map[_index]
+                        for extra in current_code.get('ExtraOffsets', []):
+                            extra['Freeze'] = False
+                        self._clear_freeze_entries(_index)
                         if _index in self.result_map:
                             del self.result_map[_index]
                         edit_list.append((_index, current_code))
@@ -527,9 +639,11 @@ class CodeList(MemoryHandler):
             new_code_data[new_idx] = code
         # Remap freeze and results
         new_freeze_map = {}
-        for old_idx, entry in list(self.freeze_map.items()):
+        for key, entry in list(self.freeze_map.items()):
+            old_idx, extra_idx = key
             if old_idx in index_map:
-                new_freeze_map[index_map[old_idx]] = entry
+                new_key = CodeList._freeze_key(index_map[old_idx], extra_idx)
+                new_freeze_map[new_key] = entry
         new_result_map = {}
         for old_idx, entry in list(self.result_map.items()):
             if old_idx in index_map:
@@ -579,10 +693,7 @@ class CodeList(MemoryHandler):
 
     def handle_name(self, req: Request, resp: Response):
         name = req.media['name']
-        index = int(req.media['index'])
-        if index not in self.code_data:
-            raise CodelistException("Can't write code that isn't in the list")
-        code = self.code_data[index]
+        _, _, _, code = self._resolve_target(req.media['index'], req.media.get('extra_index'))
         with self.update_lock:
             code['Name'] = name
 
@@ -626,6 +737,21 @@ class CodeList(MemoryHandler):
                     v = codes[i]
                     v['Value'] = {'Actual': None, 'Display': "??"}
                     v['Freeze'] = False
+                    if v.get('Source') == 'aob':
+                        extras = []
+                        for extra in v.get('ExtraOffsets', []):
+                            extra_entry = {
+                                'Name': extra.get('Name', f"Extra #{len(extras)}"),
+                                'Type': extra.get('Type', 'byte_4'),
+                                'Signed': extra.get('Signed', False),
+                                'Freeze': False,
+                                'Offset': str(extra.get('Offset', '0')).upper(),
+                                'Value': {'Actual': None, 'Display': "??"}
+                            }
+                            extras.append(extra_entry)
+                        v['ExtraOffsets'] = extras
+                    else:
+                        v.pop('ExtraOffsets', None)
                     self.code_data[i] = v
                     self.file_version = CodeList._FILE_VERSION
                     self.process_add(v)
@@ -664,6 +790,13 @@ class CodeList(MemoryHandler):
                     else:
                         aob_data.append('{:02X}'.format(int(a, 16)))
                 c['AOB'] = ' '.join(aob_data)
+                extras = []
+                for extra in c.get('ExtraOffsets', []):
+                    extra_copy = extra.copy()
+                    if 'Value' in extra_copy:
+                        del extra_copy['Value']
+                    extras.append(extra_copy)
+                c['ExtraOffsets'] = extras
         file_data = {'version': CodeList._FILE_VERSION,
                      'codes': list(write_data.values())}
         return json.dumps(file_data, indent=4)
@@ -702,6 +835,14 @@ class CodeList(MemoryHandler):
 
     def process_add(self, code):
         if code['Source'] == 'aob':
+            extras = code.setdefault('ExtraOffsets', [])
+            for extra in extras:
+                extra.setdefault('Name', "Extra Offset")
+                extra.setdefault('Type', 'byte_4')
+                extra.setdefault('Signed', False)
+                extra.setdefault('Freeze', False)
+                extra.setdefault('Value', {'Actual': None, 'Display': "??"})
+                extra['Offset'] = str(extra.get('Offset', '0')).upper()
             if code['AOB'] not in self.aob_map:
                 self.aob_map[code['AOB']] = AOB('', code['AOB'])
         if code['Source'] == 'address':
@@ -751,7 +892,8 @@ class CodeList(MemoryHandler):
                             read = None
                         except BaseConvertException:
                             read = None
-                        self.result_map[key] = {'Value': {'Actual': read.value if read is not None else None, 'Display': str(read.value) if read is not None else '??'}}
+                        self.result_map[key] = {'Value': {'Actual': read.value if read is not None else None, 'Display': str(read.value) if read is not None else '??'},
+                                                'Extras': []}
                     elif code['Source'] == 'pointer':
                         offsets = [int(x.strip(), 16) for x in code['Offsets'].split(',')]
                         buf = ctypes.c_uint64()
@@ -778,18 +920,25 @@ class CodeList(MemoryHandler):
                             read = None
                             addr = None
                         self.result_map[key] = {'Value': {'Actual': read.value if read is not None else None, 'Display': str(read.value) if read is not None else '??'},
-                                                'Resolved': {'Actual': addr, 'Display': "{:X}".format(addr) if addr is not None else '????????'}}
+                                                'Resolved': {'Actual': addr, 'Display': "{:X}".format(addr) if addr is not None else '????????'},
+                                                'Extras': []}
                     else:
                         aob_str = code['AOB']
+                        extras_output = []
+                        bases_raw = []
                         try:
                             read, addrs, selected, select_valid = self.read_aob_value(self.aob_map[aob_str], code)
+                            bases_raw = self.aob_map[aob_str].get_bases()
                         except (ProcessLookupError, PermissionError):
                             self.update_event.set()
                             read, addrs, selected = (None, None, None)
+                            bases_raw = []
                         except OSError:
                             read, addrs, selected = (None, None, None)
+                            bases_raw = []
                         except AOBException:
                             read, addrs, selected = (None, None, None)
+                            bases_raw = []
                         except Exception: #somethiung else happened
                             return
                         if selected is None:
@@ -797,10 +946,34 @@ class CodeList(MemoryHandler):
                                 del code['Selected']
                         else:
                             code['Selected'] = selected
+                        extras = code.setdefault('ExtraOffsets', [])
+                        selected_base = None
+                        if bases_raw and selected is not None and 0 <= selected < len(bases_raw):
+                            selected_base = bases_raw[selected]
+                        for extra in extras:
+                            extra_addrs = [base + int(extra['Offset'], 16) for base in bases_raw] if bases_raw else []
+                            try:
+                                extra_read = None
+                                if selected_base is not None:
+                                    extra_read = self.get_read(extra, selected_base + int(extra['Offset'], 16))
+                                extras_output.append({
+                                    'Value': {'Actual': extra_read.value if extra_read is not None else None,
+                                              'Display': str(extra_read.value) if extra_read is not None else '??'},
+                                    'Addresses': {'Actual': extra_addrs,
+                                                  'Display': ["{:X}".format(x) for x in extra_addrs] if extra_addrs else []}
+                                })
+                            except (ProcessLookupError, PermissionError):
+                                self.update_event.set()
+                                extras_output.append({'Value': {'Actual': None, 'Display': '??'},
+                                                      'Addresses': {'Actual': extra_addrs, 'Display': ["{:X}".format(x) for x in extra_addrs] if extra_addrs else []}})
+                            except (OSError, CodelistException):
+                                extras_output.append({'Value': {'Actual': None, 'Display': '??'},
+                                                      'Addresses': {'Actual': extra_addrs, 'Display': ["{:X}".format(x) for x in extra_addrs] if extra_addrs else []}})
                         self.result_map[key] = {'Value': {'Actual': read.value if read is not None else None, 'Display': str(read.value) if read is not None else '??'},
                                                 'Addresses': {'Actual': addrs, 'Display': ["{:X}".format(x) for x in addrs] if addrs is not None else []},
                                                 'LastAddresses': self.aob_map[aob_str].get_last_found_bases(),
-                                                'Selected': selected}
+                                                'Selected': selected,
+                                                'Extras': extras_output}
             self.update_event.wait(0.5)
 
     def get_read(self, code, addr: int):
@@ -865,7 +1038,7 @@ class CodeList(MemoryHandler):
             with self.update_lock:
                 try:
                     for key, value in self.freeze_map.items():
-                        addrs = self.get_addresses(value['code'])
+                        addrs = self.get_addresses(value['code'], value.get('parent'))
                         for addr in addrs:
                             self.mem().write_memory(addr, value['value'])
                 except (ProcessLookupError, PermissionError) as e:
@@ -873,21 +1046,32 @@ class CodeList(MemoryHandler):
                     self.freeze_event.set()
             self.freeze_event.wait(0.25)
 
-    def get_addresses(self, code):
+    def get_addresses(self, code, parent_code=None):
         address_list = []
-        if code['Source'] == 'address':
+        source = code.get('Source') if isinstance(code, dict) else None
+        if source == 'address':
             if 'Resolved' in code and code['Resolved'] > 0:
                 address_list.append(code['Resolved'])
-        elif code['Source'] == 'pointer':
+        elif source == 'pointer':
             if 'Resolved' in code and code['Resolved'] > 0:
                 address_list.append(code['Resolved'])
-        else:
+        elif source == 'aob':
             if code['AOB'] not in self.aob_map:
                 raise CodelistException('Cannot find AOB in map for freeze')
             aob = self.aob_map[code['AOB']]
             bases = aob.get_bases()
             for b in bases:
                 address_list.append(b + int(code['Offset'], 16))
+        else:
+            if not parent_code or parent_code.get('Source') != 'aob':
+                return address_list
+            if parent_code['AOB'] not in self.aob_map:
+                raise CodelistException('Cannot find AOB in map for freeze')
+            aob = self.aob_map[parent_code['AOB']]
+            bases = aob.get_bases()
+            offset = int(code['Offset'], 16)
+            for b in bases:
+                address_list.append(b + offset)
         return address_list
 
 

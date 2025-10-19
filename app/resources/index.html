@@ -372,6 +372,48 @@ div .input_item{
     </ons-dialog>
   </template>
 
+  <template id="extra_offset">
+    <ons-dialog id="extra_offset_dialog">
+      <div style="text-align: center; padding: 10px;">
+        <p class="extra-offset-dialog-title">
+          Add Extra Offset
+        </p>
+      </div>
+      <ons-row style="margin-top:10px;">
+        <ons-col width="100%" class="col ons-col-inner">
+          <label class="field-label" for="extra_offset_name">Name</label>
+          <input type="text" id="extra_offset_name" class="text-input text-input--material text-full" autocomplete="chrome-off" autocapitalize="off">
+        </ons-col>
+      </ons-row>
+      <ons-row style="margin-top:10px;">
+        <ons-col width="100%" class="col ons-col-inner">
+          <label class="field-label" for="extra_offset_value">Offset</label>
+          <input type="text" id="extra_offset_value" class="text-input text-input--material text-full" oninput="component_extra_dialog.validate()" autocomplete="chrome-off" autocapitalize="off">
+        </ons-col>
+      </ons-row>
+      <ons-row style="margin-top:10px;">
+        <ons-col width="100%" class="col ons-col-inner">
+          <label class="field-label" for="extra_offset_type">Type</label>
+          <select id="extra_offset_type" class="select-input select-input--material">
+            <option value="byte_1">BYTE</option>
+            <option value="byte_2">2 BYTES</option>
+            <option value="byte_4">4 BYTES</option>
+            <option value="byte_8">8 BYTES</option>
+            <option value="float">FLOAT</option>
+          </select>
+        </ons-col>
+      </ons-row>
+      <ons-row style="margin-top:10px;">
+        <ons-col align="center" width="50%" class="col ons-col-inner">
+          <ons-button modifier="quiet" id="extra_offset_save_button" style="display:block;" onclick="component_extra_dialog.on_submit()">Save</ons-button>
+        </ons-col>
+        <ons-col align="center" width="50%" class="col ons-col-inner">
+          <ons-button modifier="quiet" id="extra_offset_cancel_button" style="display:block;" onclick="component_extra_dialog.on_cancel()">Cancel</ons-button>
+        </ons-col>
+      </ons-row>
+    </ons-dialog>
+  </template>
+
   <template id="rebase_code">
     <ons-dialog id="rebase_code_dialog">
       <div style="text-align: center; padding: 10px;">

@@ -82,3 +82,59 @@ label,
 .field-label label {
   font-weight: inherit;
 }
+.extra-offsets-container {
+  margin-top: 12px;
+}
+.extra-offsets-header {
+  align-items: center;
+}
+.extra-offsets-header .extra-offsets-title {
+  font-weight: 600;
+}
+.extra-offsets-header ons-button {
+  margin-left: auto;
+}
+.extra-offset-item {
+  padding-left: 0;
+  padding-right: 0;
+}
+.extra-offset-content {
+  width: 100%;
+  padding: 8px 0;
+}
+.extra-offset-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.extra-offset-header .extra-offset-name {
+  flex: 1;
+}
+.extra-offset-actions {
+  display: flex;
+  gap: 4px;
+}
+.extra-offset-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+.extra-offset-controls .extra-offset-type {
+  min-width: 120px;
+}
+.extra-offset-controls .extra-offset-value {
+  flex: 1;
+  min-width: 120px;
+}
+.extra-offset-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #666;
+}
+.extra-offset-meta span {
+  display: inline-block;
+}
