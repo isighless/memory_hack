@@ -155,8 +155,14 @@ class Script(MemoryHandler):
             data = {}
         if _id == '__copy':
             self.script_clipboard = data
+            if not self.current_script_obj:
+                resp.media = {'status': 'SUCCESS'}
+                return
         elif _id == '__copy_clear':
             self.script_clipboard.clear()
+            if not self.current_script_obj:
+                resp.media = {'status': 'SUCCESS'}
+                return
         if not self.current_script_obj:
             raise ScriptException("No script is currently running.")
         self.current_script_obj.handle_interaction(_id, data)

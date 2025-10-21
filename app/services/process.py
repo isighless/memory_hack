@@ -24,6 +24,9 @@ class Process(Service):
         self.user = os.environ.get('USER', os.environ.get('USERNAME'))
         self.blacklist_path = self._blacklist_path()
         self.blacklist = self.load_blacklist()
+        self._blacklist_exact = set()
+        self._blacklist_patterns = []
+        self._rebuild_blacklist_cache()
         self.pid = 0
         self.pids = []
         self.pid_map = {}
@@ -249,7 +252,12 @@ class Process(Service):
     def is_blacklisted(self, name):
         if not self.blacklist:
             return False
-        return any(fnmatch.fnmatch(name, x) for x in self.blacklist)
+        candidate = (name or '').strip()
+        if not candidate:
+            return False
+        if candidate.casefold() in self._blacklist_exact:
+            return True
+        return any(fnmatch.fnmatch(candidate, pattern) for pattern in self._blacklist_patterns)
 
     def _blacklist_path(self) -> Path:
         root = Path("./resources")
@@ -262,24 +270,16 @@ class Process(Service):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.touch()
             return []
-        bl = path.read_text(encoding='utf-8').splitlines()
-        entries = [b.strip() for b in bl if b.strip()]
-        unique = []
-        seen = set()
-        for entry in entries:
-            key = entry.casefold()
-            if key in seen:
-                continue
-            seen.add(key)
-            unique.append(entry)
-        return unique
+        raw_entries = path.read_text(encoding='utf-8').splitlines()
+        return self._normalize_blacklist(raw_entries)
 
     def save_blacklist(self):
         path = getattr(self, 'blacklist_path', None) or self._blacklist_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        ordered = sorted(set(self.blacklist), key=lambda x: x.casefold())
+        ordered = self._normalize_blacklist(self.blacklist)
         path.write_text("\n".join(ordered) + ("\n" if ordered else ""), encoding='utf-8')
         self.blacklist = ordered
+        self._rebuild_blacklist_cache()
         self._apply_blacklist_to_pid_map()
 
     def get_blacklist_snapshot(self):
@@ -326,12 +326,16 @@ class Process(Service):
         added = False
         with self.pid_map_lock:
             names = {details.get('name') for details in self.pid_map.values() if details.get('name')}
-        for name in names:
+        existing = {entry.casefold() for entry in self.blacklist}
+        for raw_name in names:
+            name = (raw_name or '').strip()
             if not name:
                 continue
-            if any(name.casefold() == existing.casefold() for existing in self.blacklist):
+            key = name.casefold()
+            if key in existing:
                 continue
             self.blacklist.append(name)
+            existing.add(key)
             added = True
         if added:
             self.save_blacklist()
@@ -360,5 +364,30 @@ class Process(Service):
         blacklist = [b.strip() for b in bl]
         mem_edit.Process.set_blacklist(blacklist)
 
+    def _normalize_blacklist(self, entries):
+        normalized = []
+        seen = set()
+        for entry in entries:
+            item = (entry or '').strip()
+            if not item:
+                continue
+            key = item.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(item)
+        normalized.sort(key=lambda x: x.casefold())
+        return normalized
 
-
+    def _rebuild_blacklist_cache(self):
+        exact = set()
+        patterns = []
+        for entry in self.blacklist:
+            if not entry:
+                continue
+            if any(ch in entry for ch in "*?[]"):
+                patterns.append(entry)
+            else:
+                exact.add(entry.casefold())
+        self._blacklist_exact = exact
+        self._blacklist_patterns = patterns

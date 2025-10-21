@@ -44,7 +44,7 @@ label,
 
 .aob-textarea{
   font-family: "Lucida Console", monospace;
-  font-size: 14px;
+  font-size: 10px;
   line-height: 1.25;
 
   width: 51ch;
@@ -68,6 +68,17 @@ label,
 #row_search_value .col.ons-col-inner,
 .result-row .col.ons-col-inner {
   overflow: visible;
+}
+
+.result-row .address-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.result-row .address-controls ons-button {
+  margin-left: 0;
 }
 
 .field-label {
